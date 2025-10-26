@@ -5,10 +5,17 @@ Launches both the simulation loop and FastAPI server in the same process.
 
 import argparse
 import asyncio
+import os
 import signal
 import sys
 import threading
 from contextlib import asynccontextmanager
+
+# Fix for hybrid Intel/NVIDIA systems: Force NVIDIA GPU for PyBullet GUI
+# This resolves "Failed to retrieve a framebuffer config" errors on Ubuntu 24.04
+# Must be set BEFORE importing pybullet
+os.environ['__NV_PRIME_RENDER_OFFLOAD'] = '1'
+os.environ['__GLX_VENDOR_LIBRARY_NAME'] = 'nvidia'
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse

@@ -145,7 +145,16 @@ class SwarmWorld:
             self.last_control_time = self.sim_time
 
         # Step physics simulation
-        obs, rewards, dones, infos = self.env.step(self._compute_actions())
+        # Gymnasium API returns 5 values: obs, rewards, terminated, truncated, infos
+        # Older gym-pybullet-drones might use old Gym API (4 values)
+        step_result = self.env.step(self._compute_actions())
+        if len(step_result) == 5:
+            obs, rewards, terminated, truncated, infos = step_result
+            dones = {i: terminated.get(i, False) or truncated.get(i, False)
+                    for i in range(self.num_drones)} if isinstance(terminated, dict) else \
+                   {i: terminated or truncated for i in range(self.num_drones)}
+        else:
+            obs, rewards, dones, infos = step_result
 
         # Update simulation time
         self.sim_time += self.physics_dt
