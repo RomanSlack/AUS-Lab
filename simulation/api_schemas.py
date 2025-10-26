@@ -3,7 +3,7 @@ Pydantic models for API request/response validation.
 """
 
 from typing import List, Union, Literal
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 class SpawnRequest(BaseModel):
@@ -13,6 +13,13 @@ class SpawnRequest(BaseModel):
 
 class TakeoffRequest(BaseModel):
     """Request to takeoff drones to specified altitude."""
+    model_config = ConfigDict(json_schema_extra={
+        "examples": [
+            {"ids": ["all"], "altitude": 1.5},
+            {"ids": [0, 1, 2], "altitude": 2.0}
+        ]
+    })
+
     ids: Union[List[int], List[Literal["all"]]] = Field(
         default=["all"],
         description="List of drone IDs or ['all'] for all drones"
@@ -65,6 +72,13 @@ class HoverRequest(BaseModel):
 
 class GotoRequest(BaseModel):
     """Request to move a single drone to target position."""
+    model_config = ConfigDict(json_schema_extra={
+        "examples": [
+            {"id": 0, "x": 2.0, "y": 1.0, "z": 1.5, "yaw": 0.0},
+            {"id": 1, "x": -1.5, "y": 2.0, "z": 2.0, "yaw": 1.57}
+        ]
+    })
+
     id: int = Field(ge=0, description="Drone ID")
     x: float = Field(description="Target X position in meters")
     y: float = Field(description="Target Y position in meters")
@@ -104,6 +118,15 @@ class VelocityRequest(BaseModel):
 
 class FormationRequest(BaseModel):
     """Request to arrange swarm in formation."""
+    model_config = ConfigDict(json_schema_extra={
+        "examples": [
+            {"pattern": "circle", "center": [0, 0, 2.0], "radius": 2.0},
+            {"pattern": "line", "center": [0, 0, 1.5], "spacing": 1.0, "axis": "x"},
+            {"pattern": "grid", "center": [0, 0, 1.5], "spacing": 0.8},
+            {"pattern": "v", "center": [0, 0, 1.5], "spacing": 0.7}
+        ]
+    })
+
     pattern: Literal["line", "circle", "grid", "v"] = Field(
         description="Formation pattern: line, circle, grid, or v"
     )

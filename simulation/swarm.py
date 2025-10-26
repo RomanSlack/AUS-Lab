@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Tuple, Union
 from queue import Queue, Empty
 from enum import Enum
 
-from gym_pybullet_drones.envs.CtrlAviary import CtrlAviary
+from gym_pybullet_drones.envs.VelocityAviary import VelocityAviary
 from gym_pybullet_drones.utils.enums import DroneModel, Physics
 
 from controllers import PositionController, FormationPlanner, clamp_position, clamp_velocity
@@ -111,8 +111,8 @@ class SwarmWorld:
 
         initial_xyzs = np.array(initial_xyzs)
 
-        # Create CtrlAviary environment
-        self.env = CtrlAviary(
+        # Create VelocityAviary environment (accepts velocity commands)
+        self.env = VelocityAviary(
             drone_model=DroneModel.CF2X,
             num_drones=self.num_drones,
             initial_xyzs=initial_xyzs,
@@ -358,16 +358,32 @@ class SwarmWorld:
                     self.target_velocities[drone_id] = vel_cmd
                     self.target_yaw_rates[drone_id] = yaw_rate_cmd
 
-                    # Convert to action: [vx, vy, vz, yaw_rate]
-                    actions[drone_id] = [vel_cmd[0], vel_cmd[1], vel_cmd[2], yaw_rate_cmd]
+                    # Convert to VelocityAviary format: [vx_dir, vy_dir, vz_dir, speed_fraction]
+                    # VelocityAviary expects direction vector + speed magnitude
+                    speed = np.linalg.norm(vel_cmd)
+                    if speed > 0.01:
+                        # Direction (will be normalized by VelocityAviary)
+                        direction = vel_cmd / speed
+                        # Speed as fraction of max (SPEED_LIMIT in VelocityAviary ~0.25 m/s)
+                        # Our max velocity is 2.0 m/s, normalize to [0, 1]
+                        speed_frac = min(speed / 2.0, 1.0)
+                        actions[drone_id] = [direction[0], direction[1], direction[2], speed_frac]
+                    else:
+                        # Hovering or very small movement
+                        actions[drone_id] = [0, 0, 0, 0]
                 else:
                     actions[drone_id] = [0, 0, 0, 0]
 
             elif mode == DroneMode.VELOCITY:
-                # Direct velocity command
+                # Direct velocity command - convert to VelocityAviary format
                 vel = self.target_velocities.get(drone_id, np.zeros(3))
-                yaw_rate = self.target_yaw_rates.get(drone_id, 0.0)
-                actions[drone_id] = [vel[0], vel[1], vel[2], yaw_rate]
+                speed = np.linalg.norm(vel)
+                if speed > 0.01:
+                    direction = vel / speed
+                    speed_frac = min(speed / 2.0, 1.0)
+                    actions[drone_id] = [direction[0], direction[1], direction[2], speed_frac]
+                else:
+                    actions[drone_id] = [0, 0, 0, 0]
 
             else:  # IDLE
                 actions[drone_id] = [0, 0, 0, 0]

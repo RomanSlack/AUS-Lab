@@ -12,6 +12,14 @@ Minimal Python implementation of a UAV swarm simulation with HTTP API control, b
 - Battery simulation and health monitoring
 - GUI and headless modes
 
+## Features Update
+
+- ✅ **GPU Fixed**: Now uses NVIDIA GPU for PyBullet rendering (Ubuntu 24.04 hybrid graphics)
+- ✅ **Drones Flying**: Fixed VelocityAviary integration - drones now respond to commands properly
+- ✅ **Manual Control**: New keyboard control interface to fly individual drones
+- ✅ **Formations Working**: Circle, line, grid, and V-formations fully functional
+- ✅ **Real-time API**: All endpoints operational with live drone control
+
 ## Quick Start
 
 ### Installation
@@ -46,6 +54,31 @@ python main.py --port 9000
 ```
 
 The simulation starts automatically with the API server on `http://localhost:8000`.
+
+### Manual Keyboard Control
+
+Fly a drone manually using keyboard (while simulation runs):
+
+```bash
+# Control drone 0 (default)
+python manual_control.py
+
+# Control a specific drone (0-4)
+python manual_control.py 2
+```
+
+**Controls:**
+- `W/S` - Forward/Backward
+- `A/D` - Left/Right
+- `Q/E` - Rotate Left/Right
+- `R/F` - Up/Down
+- `SPACE` - Hover at current position
+- `H` - Return to home (0, 0, 1.5)
+- `L` - Land
+- `1-5` - Switch between drones
+- `ESC` - Exit
+
+You can fly one drone manually while using the API to control the others!
 
 ## API Reference
 

@@ -96,25 +96,54 @@ async def lifespan(app: FastAPI):
     print("[Main] Cleanup complete")
 
 
-# Create FastAPI app
+# Create FastAPI app with enhanced documentation
 app = FastAPI(
     title="AUS-Lab Swarm API",
-    description="HTTP API for controlling UAV swarm simulation",
+    description="""
+## Autonomous UAV Swarm Control API
+
+Control a physics-based multi-drone simulation with real-time commands.
+
+### Features
+* **Real-time Control**: Command individual drones or entire swarm
+* **Formations**: Circle, line, grid, and V-formation patterns
+* **Physics Simulation**: 240Hz physics, 60Hz control loop
+* **State Monitoring**: Query real-time position, velocity, battery, health
+
+### Quick Start
+1. Start simulation: `python main.py`
+2. Open this page: http://localhost:8000/docs
+3. Try the "Takeoff" endpoint to see drones fly!
+4. Use "Formation" to arrange drones in patterns
+
+### External Control
+- **Manual Control**: `python manual_control.py` for keyboard control
+- **Python Client**: See README.md for examples
+- **LLM Integration**: Natural language → API translation layer (coming soon)
+    """,
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc"
 )
 
 
 # API Endpoints
 
-@app.get("/")
+@app.get("/", tags=["Status"])
 async def root():
-    """Root endpoint with API information."""
+    """
+    **API Status and Information**
+
+    Returns current status of the simulation and available endpoints.
+    Use this to check if the simulation is running properly.
+    """
     return {
         "name": "AUS-Lab Swarm API",
         "version": "1.0.0",
         "status": "running" if swarm is not None else "not initialized",
         "num_drones": swarm.num_drones if swarm is not None else 0,
+        "docs": "http://localhost:8000/docs",
         "endpoints": [
             "POST /spawn - Respawn swarm with N drones",
             "POST /takeoff - Take off drones to altitude",
@@ -129,9 +158,16 @@ async def root():
     }
 
 
-@app.post("/spawn", response_model=CommandResponse)
+@app.post("/spawn", response_model=CommandResponse, tags=["Swarm Management"])
 async def spawn(request: SpawnRequest):
-    """Spawn or respawn swarm with N drones."""
+    """
+    **Respawn Swarm with N Drones**
+
+    Resets the simulation and spawns a new swarm with the specified number of drones.
+    All drones start on the ground in a grid formation.
+
+    - **num**: Number of drones (1-50)
+    """
     if swarm is None:
         raise HTTPException(status_code=500, detail="Swarm not initialized")
 
@@ -145,9 +181,21 @@ async def spawn(request: SpawnRequest):
     )
 
 
-@app.post("/takeoff", response_model=CommandResponse)
+@app.post("/takeoff", response_model=CommandResponse, tags=["Basic Flight"])
 async def takeoff(request: TakeoffRequest):
-    """Command drones to take off to specified altitude."""
+    """
+    **Takeoff to Altitude**
+
+    Commands drones to take off from ground to the specified altitude.
+
+    - **ids**: List of drone IDs or ["all"] for all drones
+    - **altitude**: Target altitude in meters (0.1 to 5.0)
+
+    **Example:** Take all drones to 1.5 meters
+    ```json
+    {"ids": ["all"], "altitude": 1.5}
+    ```
+    """
     if swarm is None:
         raise HTTPException(status_code=500, detail="Swarm not initialized")
 
@@ -173,9 +221,15 @@ async def takeoff(request: TakeoffRequest):
     )
 
 
-@app.post("/land", response_model=CommandResponse)
+@app.post("/land", response_model=CommandResponse, tags=["Basic Flight"])
 async def land(request: LandRequest):
-    """Command drones to land."""
+    """
+    **Land Drones**
+
+    Commands drones to descend and land on the ground.
+
+    - **ids**: List of drone IDs or ["all"] for all drones
+    """
     if swarm is None:
         raise HTTPException(status_code=500, detail="Swarm not initialized")
 
@@ -201,9 +255,15 @@ async def land(request: LandRequest):
     )
 
 
-@app.post("/hover", response_model=CommandResponse)
+@app.post("/hover", response_model=CommandResponse, tags=["Basic Flight"])
 async def hover(request: HoverRequest):
-    """Command drones to hover at current position."""
+    """
+    **Hover at Current Position**
+
+    Commands drones to maintain their current position and altitude.
+
+    - **ids**: List of drone IDs or ["all"] for all drones
+    """
     if swarm is None:
         raise HTTPException(status_code=500, detail="Swarm not initialized")
 
@@ -229,9 +289,23 @@ async def hover(request: HoverRequest):
     )
 
 
-@app.post("/goto", response_model=CommandResponse)
+@app.post("/goto", response_model=CommandResponse, tags=["Advanced Control"])
 async def goto(request: GotoRequest):
-    """Command single drone to go to target position."""
+    """
+    **Move Drone to Position**
+
+    Commands a single drone to fly to the specified 3D position.
+
+    - **id**: Drone ID (0-indexed)
+    - **x, y**: Position in meters (±10.0 bounds)
+    - **z**: Altitude in meters (0.1 to 5.0)
+    - **yaw**: Heading in radians (optional, default 0.0)
+
+    **Example:** Move drone 0 to (2, 1, 1.5)
+    ```json
+    {"id": 0, "x": 2.0, "y": 1.0, "z": 1.5, "yaw": 0.0}
+    ```
+    """
     if swarm is None:
         raise HTTPException(status_code=500, detail="Swarm not initialized")
 
@@ -254,9 +328,22 @@ async def goto(request: GotoRequest):
     )
 
 
-@app.post("/velocity", response_model=CommandResponse)
+@app.post("/velocity", response_model=CommandResponse, tags=["Advanced Control"])
 async def velocity(request: VelocityRequest):
-    """Set drone velocity directly."""
+    """
+    **Set Drone Velocity**
+
+    Directly sets the velocity of a single drone (advanced control).
+
+    - **id**: Drone ID
+    - **vx, vy, vz**: Velocity components in m/s (±5.0 bounds)
+    - **yaw_rate**: Yaw rate in rad/s (optional, default 0.0)
+
+    **Example:** Move drone 0 forward at 1 m/s
+    ```json
+    {"id": 0, "vx": 1.0, "vy": 0.0, "vz": 0.0, "yaw_rate": 0.0}
+    ```
+    """
     if swarm is None:
         raise HTTPException(status_code=500, detail="Swarm not initialized")
 
@@ -279,9 +366,41 @@ async def velocity(request: VelocityRequest):
     )
 
 
-@app.post("/formation", response_model=CommandResponse)
+@app.post("/formation", response_model=CommandResponse, tags=["Swarm Formations"])
 async def formation(request: FormationRequest):
-    """Arrange swarm in specified formation."""
+    """
+    **Arrange Swarm in Formation**
+
+    Commands the entire swarm to arrange into a specified geometric formation.
+
+    - **pattern**: Formation type ("circle", "line", "grid", "v")
+    - **center**: Formation center point [x, y, z]
+    - **spacing**: Distance between drones (0.5-3.0m, for line/grid/v)
+    - **radius**: Circle radius (0.5-5.0m, for circle only)
+    - **axis**: Line direction ("x" or "y", for line only)
+
+    **Examples:**
+
+    Circle formation:
+    ```json
+    {"pattern": "circle", "center": [0, 0, 2.0], "radius": 2.0}
+    ```
+
+    Line formation:
+    ```json
+    {"pattern": "line", "center": [0, 0, 1.5], "spacing": 1.0, "axis": "x"}
+    ```
+
+    Grid formation:
+    ```json
+    {"pattern": "grid", "center": [0, 0, 1.5], "spacing": 0.8}
+    ```
+
+    V formation (like flying geese):
+    ```json
+    {"pattern": "v", "center": [0, 0, 1.5], "spacing": 0.7}
+    ```
+    """
     if swarm is None:
         raise HTTPException(status_code=500, detail="Swarm not initialized")
 
@@ -301,9 +420,24 @@ async def formation(request: FormationRequest):
     )
 
 
-@app.get("/state", response_model=StateResponse)
+@app.get("/state", response_model=StateResponse, tags=["Status"])
 async def state():
-    """Get current state of all drones."""
+    """
+    **Get Drone States**
+
+    Returns the current state of all drones in the simulation.
+
+    **Response includes for each drone:**
+    - **id**: Drone identifier (0-indexed)
+    - **pos**: Position [x, y, z] in meters
+    - **vel**: Velocity [vx, vy, vz] in m/s
+    - **yaw**: Heading angle in radians
+    - **battery**: Battery percentage (0-100%)
+    - **healthy**: Health status (true if drone is operational)
+
+    **Plus:**
+    - **timestamp**: Simulation time in seconds
+    """
     if swarm is None:
         raise HTTPException(status_code=500, detail="Swarm not initialized")
 
@@ -311,9 +445,16 @@ async def state():
     return StateResponse(**state_data)
 
 
-@app.post("/reset", response_model=ResetResponse)
+@app.post("/reset", response_model=ResetResponse, tags=["Swarm Management"])
 async def reset():
-    """Reset simulation to initial state."""
+    """
+    **Reset Simulation**
+
+    Resets the entire simulation to its initial state.
+
+    All drones return to starting positions on the ground.
+    Simulation time, batteries, and controllers are reset.
+    """
     if swarm is None:
         raise HTTPException(status_code=500, detail="Swarm not initialized")
 
@@ -341,7 +482,7 @@ def main():
 
     # Parse arguments
     parser = argparse.ArgumentParser(description="AUS-Lab UAV Swarm Simulation")
-    parser.add_argument("--num", type=int, default=5, help="Number of drones (default: 5)")
+    parser.add_argument("--num", type=int, default=50, help="Number of drones (default: 5)")
     parser.add_argument("--headless", action="store_true", help="Run without GUI")
     parser.add_argument("--port", type=int, default=8000, help="API server port (default: 8000)")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="API server host (default: 0.0.0.0)")
