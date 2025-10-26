@@ -326,6 +326,17 @@ See the `agentic/` directory in the parent project for LLM integration examples.
 
 ## Troubleshooting
 
+### GUI Issues on Ubuntu 24.04
+
+**"Failed to retrieve a framebuffer config" error:**
+- This is fixed automatically in `main.py` for NVIDIA+Intel hybrid systems
+- The simulation now uses NVIDIA GPU for rendering
+- If you don't have NVIDIA GPU, use `--headless` mode instead
+
+**Detailed troubleshooting:** See [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+
+### Common Issues
+
 **Import errors:**
 ```bash
 # Ensure you're in the virtual environment
@@ -334,9 +345,9 @@ pip install -r requirements.txt
 ```
 
 **PyBullet GUI not showing:**
+- Check you have NVIDIA drivers installed: `nvidia-smi`
 - Remove `--headless` flag
-- On Linux, ensure X11 is configured
-- On WSL, use VcXsrv or similar X server
+- See TROUBLESHOOTING.md for graphics driver issues
 
 **Drones falling immediately:**
 - Normal during first few seconds as controllers stabilize
