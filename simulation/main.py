@@ -78,8 +78,13 @@ async def lifespan(app: FastAPI):
     sim_thread = threading.Thread(target=simulation_loop, daemon=True)
     sim_thread.start()
 
-    print(f"[Main] API server starting on http://localhost:{args.port}")
+    print(f"[Main] API server starting on http://{args.host}:{args.port}")
     print("[Main] Simulation running in background thread")
+    print(f"\n{'='*60}")
+    print(f"  Interactive API Docs: http://localhost:{args.port}/docs")
+    print(f"  Alternative Docs:     http://localhost:{args.port}/redoc")
+    print(f"  Manual Control:       python manual_control.py")
+    print(f"{'='*60}\n")
 
     yield
 
@@ -482,7 +487,7 @@ def main():
 
     # Parse arguments
     parser = argparse.ArgumentParser(description="AUS-Lab UAV Swarm Simulation")
-    parser.add_argument("--num", type=int, default=50, help="Number of drones (default: 5)")
+    parser.add_argument("--num", type=int, default=12, help="Number of drones (default: 5)")
     parser.add_argument("--headless", action="store_true", help="Run without GUI")
     parser.add_argument("--port", type=int, default=8000, help="API server port (default: 8000)")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="API server host (default: 0.0.0.0)")

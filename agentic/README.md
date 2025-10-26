@@ -1,41 +1,35 @@
-# AUS-Lab
-Research the connection between Swarm Structures, HIL, Agentic Systems, LLMs
+# Agentic Swarm Controller
 
-import json
-import google.generativeai as genai  # Gemini API client
+LLM-powered natural language control for UAV swarms.
 
-# Configure Gemini API
-genai.configure(api_key="YOUR_API_KEY")
+## Quick Start
 
-def agentic_system(user_command: str) -> dict:
-    """
-    Takes a natural language command and returns structured drone instructions.
-    """
-    prompt = f"""
-    You are controlling a swarm of drones.
-    Instruction: {user_command}
-    Output the plan in JSON with fields:
-    - task (string)
-    - area (string or coordinates)
-    - drones (list of drone IDs or roles)
-    - priority (high/medium/low)
-    """
+```bash
+# Install dependencies
+pip install -r requirements.txt
 
-    response = genai.GenerativeModel("gemini-pro").generate_content(prompt)
-    
-    # Try to parse JSON from the model's response
-    try:
-        plan = json.loads(response.text)
-    except Exception:
-        plan = {"error": "Could not parse response", "raw": response.text}
-    
-    return plan
+# Create .env file in parent directory with:
+GEMINI_API_KEY=your_key_here
 
+# Start simulation (in another terminal)
+cd ../simulation && python main.py
 
-# Example usage
-if __name__ == "__main__":
-    command = "Survey the north side of the map and report unusual activity."
-    plan = agentic_system(command)
-    print("Structured Plan:", plan)
+# Run controller
+python main.py -c "Take off to 2 meters and form a circle"
 
-    # This plan can now be sent to the simulation API layer
+# Interactive mode
+python main.py
+```
+
+## Usage
+
+```bash
+# Single command
+python main.py -c "Land all drones"
+
+# Dry run (plan only)
+python main.py -c "Survey the area" --dry-run
+
+# Custom API endpoint
+python main.py --api http://192.168.1.100:8000 -c "Takeoff"
+```
