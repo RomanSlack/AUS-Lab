@@ -117,9 +117,9 @@ class SwarmWorld:
             num_drones=self.num_drones,
             initial_xyzs=initial_xyzs,
             physics=Physics.PYB,
-            gui=self.gui,
-            freq=self.physics_hz,
-            aggregate_phy_steps=int(self.physics_hz / self.control_hz)
+            pyb_freq=self.physics_hz,
+            ctrl_freq=self.control_hz,
+            gui=self.gui
         )
 
         # Reset environment
