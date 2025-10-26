@@ -23,6 +23,13 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Install gym-pybullet-drones from GitHub (required)
+cd ..
+git clone https://github.com/utiasDSL/gym-pybullet-drones.git
+cd gym-pybullet-drones
+pip install -e .
+cd ../simulation
 ```
 
 ### Run Simulation
