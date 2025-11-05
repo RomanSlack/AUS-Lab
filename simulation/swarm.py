@@ -13,6 +13,7 @@ from gym_pybullet_drones.envs.VelocityAviary import VelocityAviary
 from gym_pybullet_drones.utils.enums import DroneModel, Physics
 
 from controllers import PositionController, FormationPlanner, clamp_position, clamp_velocity
+from mouse_handler import MouseInteractionHandler
 
 
 class DroneMode(Enum):
@@ -91,6 +92,10 @@ class SwarmWorld:
         self.last_control_time = 0.0
         self.step_count = 0
 
+        # Mouse interaction handler (only initialized if GUI enabled)
+        self.mouse_handler: Optional[MouseInteractionHandler] = None
+        self.last_clicked_coords: Optional[Tuple[float, float, float]] = None
+
         print(f"[SwarmWorld] Initialized with {num_drones} drones")
         print(f"[SwarmWorld] Physics: {physics_hz}Hz, Control: {control_hz}Hz")
 
@@ -125,6 +130,18 @@ class SwarmWorld:
         # Reset environment
         self.env.reset()
 
+        # Initialize mouse handler if GUI is enabled
+        if self.gui:
+            physics_client_id = self.env.getPyBulletClient()
+            print(f"[SwarmWorld DEBUG] Initializing mouse handler with client_id: {physics_client_id}")
+            self.mouse_handler = MouseInteractionHandler(
+                physics_client_id=physics_client_id,
+                ground_height=0.0
+            )
+            print("[SwarmWorld] Mouse interaction enabled - Click in GUI to capture coordinates!")
+        else:
+            print("[SwarmWorld DEBUG] GUI disabled, mouse handler NOT initialized")
+
     def enqueue_command(self, command: DroneCommand):
         """Thread-safe command queuing."""
         self.command_queue.put(command)
@@ -136,6 +153,14 @@ class SwarmWorld:
         Returns:
             True if simulation should continue, False to stop
         """
+        # Handle mouse input if GUI enabled
+        if self.mouse_handler is not None:
+            clicked_coords = self.mouse_handler.process_mouse_events()
+            if clicked_coords is not None:
+                self.last_clicked_coords = clicked_coords
+                print(f"\n[Mouse Click] Coordinates: ({clicked_coords[0]:.2f}, {clicked_coords[1]:.2f}, {clicked_coords[2]:.2f})")
+                print(f"[Mouse Click] Copy this for agentic system: {clicked_coords[0]:.2f}, {clicked_coords[1]:.2f}, {clicked_coords[2]:.2f}")
+
         # Process queued commands
         self._process_commands()
 
