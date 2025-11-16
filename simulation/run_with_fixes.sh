@@ -1,18 +1,23 @@
 #!/bin/bash
-# Wrapper script to run PyBullet with X11/OpenGL fixes for Ubuntu 24.04
 
-# Force specific GLX visual attributes
-export XLIB_SKIP_ARGB_VISUALS=1
+# Script to run PyBullet simulation with NVIDIA rendering fixes for Ubuntu 24.04
+# This addresses flickering issues on RTX 40-series cards with driver 570+
 
-# Use indirect rendering if direct fails
-export LIBGL_ALWAYS_INDIRECT=0
+# Disable compositor effects that cause flickering
+export KWIN_TRIPLE_BUFFER=1
+export KWIN_OPENGL_INTERFACE=egl
 
-# Force specific Mesa driver
-export MESA_LOADER_DRIVER_OVERRIDE=i915
+# NVIDIA-specific OpenGL settings
+export __NV_PRIME_RENDER_OFFLOAD=1
+export __GLX_VENDOR_LIBRARY_NAME=nvidia
+export __GL_SYNC_TO_VBLANK=0
+export vblank_mode=0
 
-# Set OpenGL version
-export MESA_GL_VERSION_OVERRIDE=4.5
-export MESA_GLSL_VERSION_OVERRIDE=450
+# Force single-threaded rendering to avoid race conditions
+export __GL_THREADED_OPTIMIZATIONS=0
+
+# Use X11 sync to prevent tearing without flickering
+export __GL_SYNC_DISPLAY_DEVICE=DP-0
 
 # Run the simulation
-python main.py "$@"
+python3 main.py "$@"
