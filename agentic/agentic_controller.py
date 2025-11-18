@@ -34,7 +34,7 @@ class AgenticSwarmController:
         if not api_key:
             raise ValueError("GEMINI_API_KEY not found in .env file")
 
-                # Configure Gemini here
+                # Configure Gemini
 
         genai.configure(api_key=api_key)
 
