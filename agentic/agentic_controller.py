@@ -19,7 +19,7 @@ class AgenticSwarmController:
     Handles natural language → structured actions → API execution → feedback.
     """
 
-    def __init__(self, api_base_url: str = "http://localhost:8000", gemini_model: str = "gemini-2.0-flash-exp"):
+    def __init__(self, api_base_url: str = "http://localhost:8000", gemini_model: str = "models/gemini-flash-latest"):
         """
         Initialize the agentic controller.
 
@@ -34,8 +34,10 @@ class AgenticSwarmController:
         if not api_key:
             raise ValueError("GEMINI_API_KEY not found in .env file")
 
-        # Configure Gemini
+                # Configure Gemini
+
         genai.configure(api_key=api_key)
+
         self.model = genai.GenerativeModel(gemini_model)
 
         # Initialize API client and translator
