@@ -13,6 +13,8 @@ from gym_pybullet_drones.envs.VelocityAviary import VelocityAviary
 from gym_pybullet_drones.utils.enums import DroneModel, Physics
 
 from controllers import PositionController, FormationPlanner, clamp_position, clamp_velocity
+from mouse_handler import MouseInteractionHandler
+from custom_renderer import CustomRenderer
 
 
 class DroneMode(Enum):
@@ -43,18 +45,21 @@ class SwarmWorld:
                  num_drones: int = 5,
                  gui: bool = True,
                  physics_hz: int = 240,
-                 control_hz: int = 60):
+                 control_hz: int = 60,
+                 use_custom_renderer: bool = True):
         """
         Initialize swarm simulation.
 
         Args:
             num_drones: Number of drones in swarm
-            gui: Enable PyBullet GUI
+            gui: Enable visualization (custom renderer if use_custom_renderer=True)
             physics_hz: Physics simulation frequency
             control_hz: Control loop frequency
+            use_custom_renderer: Use custom OpenCV renderer instead of PyBullet GUI
         """
         self.num_drones = num_drones
         self.gui = gui
+        self.use_custom_renderer = use_custom_renderer and gui
         self.physics_hz = physics_hz
         self.control_hz = control_hz
         self.physics_dt = 1.0 / physics_hz
@@ -91,8 +96,15 @@ class SwarmWorld:
         self.last_control_time = 0.0
         self.step_count = 0
 
+        # Rendering
+        self.custom_renderer: Optional[CustomRenderer] = None
+        self.mouse_handler: Optional[MouseInteractionHandler] = None
+        self.last_clicked_coords: Optional[Tuple[float, float, float]] = None
+
         print(f"[SwarmWorld] Initialized with {num_drones} drones")
         print(f"[SwarmWorld] Physics: {physics_hz}Hz, Control: {control_hz}Hz")
+        if self.use_custom_renderer:
+            print(f"[SwarmWorld] Using custom OpenCV renderer (GPU-accelerated, flicker-free)")
 
     def _init_environment(self):
         """Initialize gym-pybullet-drones environment."""
@@ -111,7 +123,10 @@ class SwarmWorld:
 
         initial_xyzs = np.array(initial_xyzs)
 
-        # Create VelocityAviary environment (accepts velocity commands)
+        # Create VelocityAviary environment
+        # Use DIRECT mode (no GUI) if custom renderer is enabled
+        pybullet_gui = self.gui and not self.use_custom_renderer
+
         self.env = VelocityAviary(
             drone_model=DroneModel.CF2X,
             num_drones=self.num_drones,
@@ -119,11 +134,41 @@ class SwarmWorld:
             physics=Physics.PYB,
             pyb_freq=self.physics_hz,
             ctrl_freq=self.control_hz,
-            gui=self.gui
+            gui=pybullet_gui
         )
 
         # Reset environment
         self.env.reset()
+
+        # Initialize renderer
+        physics_client_id = self.env.getPyBulletClient()
+
+        if self.use_custom_renderer:
+            # Initialize custom OpenCV renderer
+            print("[SwarmWorld] Initializing custom renderer...")
+            self.custom_renderer = CustomRenderer(
+                physics_client_id=physics_client_id,
+                window_width=1920,
+                window_height=1080,
+                camera_distance=8.0,
+                camera_yaw=50,
+                camera_pitch=-35,
+                camera_target=(0, 0, 0),
+                render_fps=60
+            )
+            print("[SwarmWorld] Custom renderer ready - Right-click in window to capture coordinates!")
+
+        elif self.gui:
+            # Initialize old mouse handler for PyBullet GUI
+            print(f"[SwarmWorld] Using PyBullet native GUI with mouse handler")
+            self.mouse_handler = MouseInteractionHandler(
+                physics_client_id=physics_client_id,
+                ground_height=0.0
+            )
+            print("[SwarmWorld] Mouse interaction enabled - Click in GUI to capture coordinates!")
+
+        else:
+            print("[SwarmWorld] Running in headless mode (no visualization)")
 
     def enqueue_command(self, command: DroneCommand):
         """Thread-safe command queuing."""
@@ -136,6 +181,33 @@ class SwarmWorld:
         Returns:
             True if simulation should continue, False to stop
         """
+        # Handle rendering and mouse input
+        if self.custom_renderer is not None:
+            # Custom renderer handles both rendering and mouse input
+            try:
+                if not self.custom_renderer.render():
+                    print("[SwarmWorld] Renderer returned False - closing")
+                    return False  # Window closed
+            except Exception as e:
+                print(f"[SwarmWorld] ERROR in custom renderer: {e}")
+                import traceback
+                traceback.print_exc()
+                return False
+
+            # Get clicked coordinates from custom renderer
+            clicked_coords = self.custom_renderer.get_last_clicked_coords()
+            if clicked_coords != self.last_clicked_coords and clicked_coords is not None:
+                self.last_clicked_coords = clicked_coords
+                # Don't print here - renderer already prints
+
+        elif self.mouse_handler is not None:
+            # Old PyBullet GUI mouse handler
+            clicked_coords = self.mouse_handler.process_mouse_events()
+            if clicked_coords is not None:
+                self.last_clicked_coords = clicked_coords
+                print(f"\n[Mouse Click] Coordinates: ({clicked_coords[0]:.2f}, {clicked_coords[1]:.2f}, {clicked_coords[2]:.2f})")
+                print(f"[Mouse Click] Copy this for agentic system: {clicked_coords[0]:.2f}, {clicked_coords[1]:.2f}, {clicked_coords[2]:.2f}")
+
         # Process queued commands
         self._process_commands()
 
@@ -503,4 +575,6 @@ class SwarmWorld:
     def close(self):
         """Clean up and close simulation."""
         print("[SwarmWorld] Closing simulation")
+        if self.custom_renderer is not None:
+            self.custom_renderer.close()
         self.env.close()

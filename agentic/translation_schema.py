@@ -211,6 +211,9 @@ Rules:
 8. Use goto for individual drone positioning
 9. Keep altitude between 0.1 and 5.0 meters
 10. Keep positions within ±10 meters (x, y)
+11. When user provides explicit coordinates (e.g., "fly to 2.5, 3.1, 1.5"), parse them as x, y, z
+12. Coordinates can come from GUI clicks - treat them as target waypoints
+13. For "intercept" or "fly to" commands with coordinates, use formation with center at those coords
 
 Example Input: "Take off to 2 meters then form a circle"
 Example Output:
@@ -230,6 +233,30 @@ Example Output:
       "drone_ids": "all",
       "parameters": {{"pattern": "circle", "center": [0, 0, 2.0], "radius": 2.0}},
       "priority": "medium",
+      "wait_for_completion": true,
+      "expected_duration": 8.0
+    }}
+  ]
+}}
+
+Example Input: "Fly to coordinates 2.5, 3.1, 1.5"
+Example Output:
+{{
+  "mission_name": "Fly to clicked position",
+  "actions": [
+    {{
+      "action_type": "takeoff",
+      "drone_ids": "all",
+      "parameters": {{"altitude": 1.5}},
+      "priority": "high",
+      "wait_for_completion": true,
+      "expected_duration": 5.0
+    }},
+    {{
+      "action_type": "formation",
+      "drone_ids": "all",
+      "parameters": {{"pattern": "circle", "center": [2.5, 3.1, 1.5], "radius": 1.0}},
+      "priority": "high",
       "wait_for_completion": true,
       "expected_duration": 8.0
     }}

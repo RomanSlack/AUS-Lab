@@ -9,6 +9,7 @@ import os
 import signal
 import sys
 import threading
+import time
 from contextlib import asynccontextmanager
 
 # Fix for hybrid Intel/NVIDIA systems: Force NVIDIA GPU for PyBullet GUI
@@ -16,6 +17,10 @@ from contextlib import asynccontextmanager
 # Must be set BEFORE importing pybullet
 os.environ['__NV_PRIME_RENDER_OFFLOAD'] = '1'
 os.environ['__GLX_VENDOR_LIBRARY_NAME'] = 'nvidia'
+
+# Try to reduce flickering with these NVIDIA settings
+os.environ['__GL_SYNC_TO_VBLANK'] = '0'
+os.environ['vblank_mode'] = '0'
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -25,7 +30,7 @@ from swarm import SwarmWorld, DroneCommand
 from api_schemas import (
     SpawnRequest, TakeoffRequest, LandRequest, HoverRequest,
     GotoRequest, VelocityRequest, FormationRequest,
-    StateResponse, CommandResponse, ResetResponse
+    StateResponse, CommandResponse, ResetResponse, ClickCoordsResponse
 )
 
 
@@ -35,70 +40,49 @@ sim_thread: threading.Thread = None
 running = True
 
 
+def run_api_server():
+    """Background thread running the API server."""
+    print("[APIServer] Starting FastAPI server")
+    uvicorn.run(
+        app,
+        host=args.host,
+        port=args.port,
+        log_level="info"
+    )
+
 def simulation_loop():
-    """Background thread running the physics simulation."""
+    """Main thread running the physics simulation with GUI."""
     global swarm, running
 
-    print("[SimLoop] Starting simulation loop")
+    print("[SimLoop] Starting simulation loop in MAIN THREAD", flush=True)
 
     try:
+        step_count = 0
         while running:
             if swarm is not None:
+                if step_count == 0:
+                    print(f"[SimLoop] Beginning first step...", flush=True)
                 if not swarm.step():
-                    print("[SimLoop] Simulation ended")
+                    print("[SimLoop] Simulation ended", flush=True)
                     break
+                step_count += 1
+                if step_count % 240 == 0:  # Print every second
+                    print(f"[SimLoop] Running... {step_count} steps completed", flush=True)
             else:
-                asyncio.sleep(0.01)
+                time.sleep(0.01)
     except Exception as e:
-        print(f"[SimLoop] Error in simulation loop: {e}")
+        print(f"[SimLoop] Error in simulation loop: {e}", flush=True)
         import traceback
         traceback.print_exc()
     finally:
-        print("[SimLoop] Simulation loop terminated")
+        print("[SimLoop] Simulation loop terminated", flush=True)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown."""
-    global swarm, sim_thread, running
-
-    # Startup
-    print("[Main] Starting AUS-Lab Swarm Simulation")
-
-    # Initialize swarm
-    swarm = SwarmWorld(
-        num_drones=args.num,
-        gui=not args.headless,
-        physics_hz=240,
-        control_hz=60
-    )
-
-    # Start simulation thread
-    running = True
-    sim_thread = threading.Thread(target=simulation_loop, daemon=True)
-    sim_thread.start()
-
-    print(f"[Main] API server starting on http://{args.host}:{args.port}")
-    print("[Main] Simulation running in background thread")
-    print(f"\n{'='*60}")
-    print(f"  Interactive API Docs: http://localhost:{args.port}/docs")
-    print(f"  Alternative Docs:     http://localhost:{args.port}/redoc")
-    print(f"  Manual Control:       python manual_control.py")
-    print(f"{'='*60}\n")
-
+    # Just a placeholder now since we manage lifecycle in main()
     yield
-
-    # Shutdown
-    print("[Main] Shutting down...")
-    running = False
-
-    if sim_thread is not None:
-        sim_thread.join(timeout=2.0)
-
-    if swarm is not None:
-        swarm.close()
-
-    print("[Main] Cleanup complete")
 
 
 # Create FastAPI app with enhanced documentation
@@ -473,6 +457,43 @@ async def reset():
     )
 
 
+@app.get("/click", response_model=ClickCoordsResponse, tags=["Mouse Interaction"])
+async def get_click_coords():
+    """
+    **Get Last Clicked Coordinates**
+
+    Returns the coordinates of the last mouse click in the PyBullet GUI.
+
+    **Use Case:**
+    1. Click in the 3D GUI viewport
+    2. Call this endpoint to retrieve the clicked coordinates
+    3. Use coordinates in agentic commands or direct API calls
+
+    **Response:**
+    - **has_click**: Whether any click has been registered
+    - **coords**: [x, y, z] world coordinates of the click
+    - **message**: Human-readable status message
+
+    **Note:** Only works when GUI is enabled (not in headless mode)
+    """
+    if swarm is None:
+        raise HTTPException(status_code=500, detail="Swarm not initialized")
+
+    if swarm.last_clicked_coords is None:
+        return ClickCoordsResponse(
+            has_click=False,
+            coords=[],
+            message="No click registered yet. Click in the GUI viewport to set coordinates."
+        )
+
+    x, y, z = swarm.last_clicked_coords
+    return ClickCoordsResponse(
+        has_click=True,
+        coords=[x, y, z],
+        message=f"Last click at ({x:.2f}, {y:.2f}, {z:.2f})"
+    )
+
+
 def signal_handler(sig, frame):
     """Handle Ctrl+C gracefully."""
     global running
@@ -483,12 +504,14 @@ def signal_handler(sig, frame):
 
 def main():
     """Main entry point."""
-    global args
+    global args, swarm, sim_thread, running
 
     # Parse arguments
     parser = argparse.ArgumentParser(description="AUS-Lab UAV Swarm Simulation")
-    parser.add_argument("--num", type=int, default=12, help="Number of drones (default: 5)")
+    parser.add_argument("--num", type=int, default=5, help="Number of drones (default: 5)")
     parser.add_argument("--headless", action="store_true", help="Run without GUI")
+    parser.add_argument("--legacy-gui", action="store_true",
+                        help="Use legacy PyBullet GUI instead of custom renderer (may flicker on some systems)")
     parser.add_argument("--port", type=int, default=8000, help="API server port (default: 8000)")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="API server host (default: 0.0.0.0)")
 
@@ -497,13 +520,46 @@ def main():
     # Register signal handler
     signal.signal(signal.SIGINT, signal_handler)
 
-    # Run server
-    uvicorn.run(
-        app,
-        host=args.host,
-        port=args.port,
-        log_level="info"
+    print("[Main] Starting AUS-Lab Swarm Simulation")
+
+    # Determine which renderer to use
+    use_custom = not args.legacy_gui
+
+    # Initialize swarm in main thread
+    swarm = SwarmWorld(
+        num_drones=args.num,
+        gui=not args.headless,
+        physics_hz=240,
+        control_hz=60,
+        use_custom_renderer=use_custom
     )
+
+    # Start API server in background thread
+    running = True
+    api_thread = threading.Thread(target=run_api_server, daemon=True)
+    api_thread.start()
+
+    print(f"[Main] API server starting on http://{args.host}:{args.port}")
+    print(f"\n{'='*60}")
+    print(f"  Interactive API Docs: http://localhost:{args.port}/docs")
+    print(f"  Alternative Docs:     http://localhost:{args.port}/redoc")
+    print(f"  Manual Control:       python manual_control.py")
+    print(f"{'='*60}\n")
+
+    # Give API server time to start
+    time.sleep(1)
+
+    # Run simulation loop in main thread (required for PyBullet mouse events)
+    try:
+        simulation_loop()
+    except KeyboardInterrupt:
+        print("\n[Main] Keyboard interrupt received")
+    finally:
+        print("[Main] Shutting down...")
+        running = False
+        if swarm is not None:
+            swarm.close()
+        print("[Main] Cleanup complete")
 
 
 if __name__ == "__main__":

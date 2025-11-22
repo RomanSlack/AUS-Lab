@@ -178,3 +178,10 @@ class ResetResponse(BaseModel):
     success: bool
     message: str
     num_drones: int
+
+
+class ClickCoordsResponse(BaseModel):
+    """Response containing last clicked coordinates."""
+    has_click: bool = Field(description="Whether a click has been registered")
+    coords: List[float] = Field(default_factory=list, description="[x, y, z] coordinates if clicked")
+    message: str
