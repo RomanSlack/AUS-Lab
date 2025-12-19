@@ -13,7 +13,7 @@ interface DroneSwarmProps {
 // Scale factor - model is ~0.02 scale, we want ~0.2m drones, so 10x
 const MODEL_SCALE = 10;
 
-export function DroneSwarm({ drones, maxCount = 100 }: DroneSwarmProps) {
+export function DroneSwarm({ drones, maxCount = 5000 }: DroneSwarmProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const [modelGeometry, setModelGeometry] = useState<THREE.BufferGeometry | null>(null);
 

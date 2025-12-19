@@ -8,7 +8,7 @@ export function ControlPanel() {
   const { connected, drones, monitorMode, setMonitorMode } = useSimulationStore();
 
   const [altitude, setAltitude] = useState(1.5);
-  const [droneCount, setDroneCount] = useState(5);
+  const [droneCount, setDroneCount] = useState(50);
   const [formationRadius, setFormationRadius] = useState(2.0);
   const [speed, setSpeedValue] = useState(1.0);
 
@@ -108,7 +108,6 @@ export function ControlPanel() {
           <input
             type="number"
             min={1}
-            max={50}
             value={droneCount}
             onChange={(e) => setDroneCount(Number(e.target.value))}
           />
@@ -125,12 +124,17 @@ export function ControlPanel() {
         <h3>Drone Velocity</h3>
         <div className="slider-group">
           <label>
-            Speed: {speed.toFixed(1)}x
+            <div className="speed-display">
+              <span>{speed.toFixed(1)}x</span>
+              <span className="speed-units">
+                {(speed * 2).toFixed(1)} m/s | {(speed * 2 * 2.237).toFixed(1)} mph
+              </span>
+            </div>
             <input
               type="range"
-              min={0.5}
-              max={3.0}
-              step={0.1}
+              min={1}
+              max={20}
+              step={0.5}
               value={speed}
               onChange={(e) => handleSpeedChange(Number(e.target.value))}
             />

@@ -165,6 +165,24 @@ button.active.monitor:hover:not(:disabled) {
   font-style: italic;
 }
 
+.speed-display {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.speed-display span:first-child {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #4a90d9;
+}
+
+.speed-units {
+  font-size: 0.75rem;
+  color: #888;
+}
+
 .slider-group {
   margin-top: 12px;
 }

@@ -88,20 +88,39 @@ def run_api_server():
 
 def simulation_loop():
     """Main thread running the physics simulation with GUI."""
-    global swarm, running
+    global swarm, running, web_mode
 
     print("[SimLoop] Starting simulation loop in MAIN THREAD", flush=True)
 
+    # For Rust physics, we need to throttle to real-time
+    # Physics runs at 240Hz = 4.167ms per step
+    physics_dt = 1.0 / 240.0
+
     try:
         step_count = 0
+        last_step_time = time.perf_counter()
+
         while running:
             if swarm is not None:
                 if step_count == 0:
                     print(f"[SimLoop] Beginning first step...", flush=True)
+                    last_step_time = time.perf_counter()
+
                 if not swarm.step():
                     print("[SimLoop] Simulation ended", flush=True)
                     break
+
                 step_count += 1
+
+                # Real-time throttling for Rust physics (web mode)
+                if web_mode:
+                    current_time = time.perf_counter()
+                    elapsed = current_time - last_step_time
+                    sleep_time = physics_dt - elapsed
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+                    last_step_time = time.perf_counter()
+
                 if step_count % 240 == 0:  # Print every second
                     print(f"[SimLoop] Running... {step_count} steps completed", flush=True)
             else:
@@ -702,7 +721,7 @@ def main():
 
     # Parse arguments
     parser = argparse.ArgumentParser(description="AUS-Lab UAV Swarm Simulation")
-    parser.add_argument("--num", type=int, default=5, help="Number of drones (default: 5)")
+    parser.add_argument("--num", type=int, default=50, help="Number of drones (default: 50)")
     parser.add_argument("--headless", action="store_true", help="Run without GUI")
     parser.add_argument("--legacy-gui", action="store_true",
                         help="Use legacy PyBullet GUI instead of custom renderer (may flicker on some systems)")
