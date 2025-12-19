@@ -8,7 +8,7 @@ import argparse
 import sys
 from agentic_controller import AgenticSwarmController
 
-
+# main function for API
 def main():
     parser = argparse.ArgumentParser(
         description="LLM-Powered UAV Swarm Controller",
@@ -54,8 +54,8 @@ Examples:
     parser.add_argument(
         "--model",
         type=str,
-        default="gemini-2.0-flash-exp",
-        help="Gemini model to use (default: gemini-2.0-flash-exp)"
+        default="models/gemini-flash-latest",
+        help="Gemini model to use (default: models/gemini-flash-latest)"
     )
 
     parser.add_argument(

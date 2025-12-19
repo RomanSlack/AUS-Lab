@@ -18,6 +18,10 @@ from contextlib import asynccontextmanager
 os.environ['__NV_PRIME_RENDER_OFFLOAD'] = '1'
 os.environ['__GLX_VENDOR_LIBRARY_NAME'] = 'nvidia'
 
+# Try to reduce flickering with these NVIDIA settings
+os.environ['__GL_SYNC_TO_VBLANK'] = '0'
+os.environ['vblank_mode'] = '0'
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 import uvicorn
@@ -50,22 +54,28 @@ def simulation_loop():
     """Main thread running the physics simulation with GUI."""
     global swarm, running
 
-    print("[SimLoop] Starting simulation loop in MAIN THREAD")
+    print("[SimLoop] Starting simulation loop in MAIN THREAD", flush=True)
 
     try:
+        step_count = 0
         while running:
             if swarm is not None:
+                if step_count == 0:
+                    print(f"[SimLoop] Beginning first step...", flush=True)
                 if not swarm.step():
-                    print("[SimLoop] Simulation ended")
+                    print("[SimLoop] Simulation ended", flush=True)
                     break
+                step_count += 1
+                if step_count % 240 == 0:  # Print every second
+                    print(f"[SimLoop] Running... {step_count} steps completed", flush=True)
             else:
                 time.sleep(0.01)
     except Exception as e:
-        print(f"[SimLoop] Error in simulation loop: {e}")
+        print(f"[SimLoop] Error in simulation loop: {e}", flush=True)
         import traceback
         traceback.print_exc()
     finally:
-        print("[SimLoop] Simulation loop terminated")
+        print("[SimLoop] Simulation loop terminated", flush=True)
 
 
 @asynccontextmanager
@@ -498,8 +508,10 @@ def main():
 
     # Parse arguments
     parser = argparse.ArgumentParser(description="AUS-Lab UAV Swarm Simulation")
-    parser.add_argument("--num", type=int, default=150, help="Number of drones (default: 5)")
+    parser.add_argument("--num", type=int, default=5, help="Number of drones (default: 5)")
     parser.add_argument("--headless", action="store_true", help="Run without GUI")
+    parser.add_argument("--legacy-gui", action="store_true",
+                        help="Use legacy PyBullet GUI instead of custom renderer (may flicker on some systems)")
     parser.add_argument("--port", type=int, default=8000, help="API server port (default: 8000)")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="API server host (default: 0.0.0.0)")
 
@@ -510,12 +522,16 @@ def main():
 
     print("[Main] Starting AUS-Lab Swarm Simulation")
 
-    # Initialize swarm in main thread (required for PyBullet GUI)
+    # Determine which renderer to use
+    use_custom = not args.legacy_gui
+
+    # Initialize swarm in main thread
     swarm = SwarmWorld(
         num_drones=args.num,
         gui=not args.headless,
         physics_hz=240,
-        control_hz=60
+        control_hz=60,
+        use_custom_renderer=use_custom
     )
 
     # Start API server in background thread
