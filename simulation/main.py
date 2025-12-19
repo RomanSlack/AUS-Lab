@@ -498,7 +498,7 @@ def main():
 
     # Parse arguments
     parser = argparse.ArgumentParser(description="AUS-Lab UAV Swarm Simulation")
-    parser.add_argument("--num", type=int, default=12, help="Number of drones (default: 5)")
+    parser.add_argument("--num", type=int, default=150, help="Number of drones (default: 5)")
     parser.add_argument("--headless", action="store_true", help="Run without GUI")
     parser.add_argument("--port", type=int, default=8000, help="API server port (default: 8000)")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="API server host (default: 0.0.0.0)")

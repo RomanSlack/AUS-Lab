@@ -130,9 +130,18 @@ class SwarmWorld:
         # Reset environment
         self.env.reset()
 
+        # Change floor to white (remove checkerboard pattern)
+        import pybullet as p
+        physics_client_id = self.env.getPyBulletClient()
+        plane_id = self.env.PLANE_ID
+        # Remove texture and set white color
+        p.changeVisualShape(plane_id, -1,
+                          textureUniqueId=-1,  # Remove texture
+                          rgbaColor=[1, 1, 1, 1],  # White color
+                          physicsClientId=physics_client_id)
+
         # Initialize mouse handler if GUI is enabled
         if self.gui:
-            physics_client_id = self.env.getPyBulletClient()
             print(f"[SwarmWorld DEBUG] Initializing mouse handler with client_id: {physics_client_id}")
             self.mouse_handler = MouseInteractionHandler(
                 physics_client_id=physics_client_id,
