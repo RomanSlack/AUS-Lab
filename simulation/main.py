@@ -22,9 +22,11 @@ os.environ['__GLX_VENDOR_LIBRARY_NAME'] = 'nvidia'
 os.environ['__GL_SYNC_TO_VBLANK'] = '0'
 os.environ['vblank_mode'] = '0'
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+import json
 
 from swarm import SwarmWorld, DroneCommand
 from api_schemas import (
@@ -38,6 +40,39 @@ from api_schemas import (
 swarm: SwarmWorld = None
 sim_thread: threading.Thread = None
 running = True
+web_mode = False  # WebSocket mode flag
+
+
+class ConnectionManager:
+    """Manages WebSocket connections for real-time state broadcasting."""
+
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        print(f"[WebSocket] Client connected. Total: {len(self.active_connections)}")
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+        print(f"[WebSocket] Client disconnected. Total: {len(self.active_connections)}")
+
+    async def broadcast(self, message: dict):
+        """Broadcast message to all connected clients."""
+        disconnected = []
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception:
+                disconnected.append(connection)
+        # Clean up disconnected clients
+        for conn in disconnected:
+            self.disconnect(conn)
+
+
+manager = ConnectionManager()
 
 
 def run_api_server():
@@ -114,6 +149,15 @@ Control a physics-based multi-drone simulation with real-time commands.
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc"
+)
+
+# Add CORS middleware for web frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -494,6 +538,133 @@ async def get_click_coords():
     )
 
 
+# WebSocket endpoint for real-time communication
+
+def handle_websocket_command(payload: dict) -> dict:
+    """Handle a command received via WebSocket."""
+    if swarm is None:
+        return {"success": False, "message": "Swarm not initialized"}
+
+    action = payload.get("action")
+    params = payload.get("params", {})
+
+    try:
+        if action == "takeoff":
+            ids = params.get("ids", ["all"])
+            altitude = params.get("altitude", 1.0)
+            drone_ids = "all" if ids == ["all"] else ids
+            cmd = DroneCommand("takeoff", drone_ids, {"altitude": altitude})
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": f"Takeoff to {altitude}m"}
+
+        elif action == "land":
+            ids = params.get("ids", ["all"])
+            drone_ids = "all" if ids == ["all"] else ids
+            cmd = DroneCommand("land", drone_ids, {})
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": "Land commanded"}
+
+        elif action == "hover":
+            ids = params.get("ids", ["all"])
+            drone_ids = "all" if ids == ["all"] else ids
+            cmd = DroneCommand("hover", drone_ids, {})
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": "Hover commanded"}
+
+        elif action == "goto":
+            cmd = DroneCommand("goto", [params["id"]], params)
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": f"Drone {params['id']} going to position"}
+
+        elif action == "velocity":
+            cmd = DroneCommand("velocity", [params["id"]], params)
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": f"Drone {params['id']} velocity set"}
+
+        elif action == "formation":
+            cmd = DroneCommand("formation", "all", params)
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": f"Formation '{params.get('pattern')}' commanded"}
+
+        elif action == "spawn":
+            num = params.get("num", 5)
+            cmd = DroneCommand("spawn", "all", {"num": num})
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": f"Spawning {num} drones"}
+
+        elif action == "reset":
+            cmd = DroneCommand("reset", "all", {})
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": "Simulation reset"}
+
+        else:
+            return {"success": False, "message": f"Unknown action: {action}"}
+
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time bidirectional communication.
+
+    Sends state updates at 60Hz and receives commands.
+    """
+    await manager.connect(websocket)
+
+    async def send_state():
+        """Send state updates to this client at 60Hz."""
+        try:
+            while True:
+                if swarm is not None:
+                    state_data = swarm.get_state()
+                    await websocket.send_json({
+                        "type": "state",
+                        "payload": {
+                            "drones": state_data["drones"],
+                            "timestamp": state_data["timestamp"]
+                        }
+                    })
+                await asyncio.sleep(1/60)  # 60Hz
+        except Exception as e:
+            print(f"[WebSocket] Send error: {e}")
+
+    async def receive_commands():
+        """Receive and handle commands from this client."""
+        try:
+            while True:
+                data = await websocket.receive_text()
+                message = json.loads(data)
+
+                if message.get("type") == "command":
+                    result = handle_websocket_command(message.get("payload", {}))
+                    await websocket.send_json({
+                        "type": "ack",
+                        "payload": result
+                    })
+        except WebSocketDisconnect:
+            pass
+        except Exception as e:
+            print(f"[WebSocket] Receive error: {e}")
+
+    # Run both tasks concurrently
+    send_task = asyncio.create_task(send_state())
+    receive_task = asyncio.create_task(receive_commands())
+
+    try:
+        # Wait for either task to complete (usually due to disconnect)
+        done, pending = await asyncio.wait(
+            [send_task, receive_task],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+        # Cancel the other task
+        for task in pending:
+            task.cancel()
+    finally:
+        manager.disconnect(websocket)
+
+
 def signal_handler(sig, frame):
     """Handle Ctrl+C gracefully."""
     global running
@@ -504,7 +675,7 @@ def signal_handler(sig, frame):
 
 def main():
     """Main entry point."""
-    global args, swarm, sim_thread, running
+    global args, swarm, sim_thread, running, web_mode
 
     # Parse arguments
     parser = argparse.ArgumentParser(description="AUS-Lab UAV Swarm Simulation")
@@ -512,10 +683,17 @@ def main():
     parser.add_argument("--headless", action="store_true", help="Run without GUI")
     parser.add_argument("--legacy-gui", action="store_true",
                         help="Use legacy PyBullet GUI instead of custom renderer (may flicker on some systems)")
+    parser.add_argument("--web", action="store_true",
+                        help="Enable web mode: runs headless with WebSocket streaming for Three.js frontend")
     parser.add_argument("--port", type=int, default=8000, help="API server port (default: 8000)")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="API server host (default: 0.0.0.0)")
 
     args = parser.parse_args()
+
+    # Web mode implies headless
+    web_mode = args.web
+    if web_mode:
+        args.headless = True
 
     # Register signal handler
     signal.signal(signal.SIGINT, signal_handler)
@@ -541,9 +719,14 @@ def main():
 
     print(f"[Main] API server starting on http://{args.host}:{args.port}")
     print(f"\n{'='*60}")
-    print(f"  Interactive API Docs: http://localhost:{args.port}/docs")
-    print(f"  Alternative Docs:     http://localhost:{args.port}/redoc")
-    print(f"  Manual Control:       python manual_control.py")
+    if web_mode:
+        print(f"  WEB MODE ENABLED - Headless with WebSocket streaming")
+        print(f"  WebSocket URL:        ws://localhost:{args.port}/ws")
+        print(f"  Start web frontend:   cd web_simulation && npm run dev")
+    else:
+        print(f"  Interactive API Docs: http://localhost:{args.port}/docs")
+        print(f"  Alternative Docs:     http://localhost:{args.port}/redoc")
+        print(f"  Manual Control:       python manual_control.py")
     print(f"{'='*60}\n")
 
     # Give API server time to start
