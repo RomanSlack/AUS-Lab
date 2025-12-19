@@ -91,6 +91,9 @@ class SwarmWorld:
         # Health status
         self.health_status: Dict[int, bool] = {i: True for i in range(num_drones)}
 
+        # Speed multiplier (1.0 = normal speed)
+        self.speed_multiplier: float = 1.0
+
         # Timing
         self.sim_time = 0.0
         self.last_control_time = 0.0
@@ -296,6 +299,43 @@ class SwarmWorld:
         elif cmd.cmd_type == "speed":
             speed = cmd.params.get("speed", 1.0)
             self._set_speed(speed)
+
+        elif cmd.cmd_type == "waypoint":
+            x = cmd.params.get("x", 0.0)
+            y = cmd.params.get("y", 0.0)
+            z = cmd.params.get("z", 1.5)
+            self._goto_waypoint(x, y, z)
+
+    def _set_speed(self, speed_multiplier: float):
+        """Set speed multiplier for all drones (affects max velocity)."""
+        self.speed_multiplier = speed_multiplier
+        base_velocity = 2.0  # Base max velocity in m/s
+        new_max_velocity = base_velocity * speed_multiplier
+
+        for drone_id in range(self.num_drones):
+            self.position_controllers[drone_id].set_max_velocity(new_max_velocity)
+
+        print(f"[SwarmWorld] Speed set to {speed_multiplier:.1f}x (max velocity: {new_max_velocity:.1f} m/s)")
+
+    def _goto_waypoint(self, x: float, y: float, z: float):
+        """Command all drones to fly to a formation centered at the waypoint."""
+        center = np.array([x, y, z])
+
+        # Use circle formation around the waypoint
+        radius = 0.8  # Compact formation
+        positions = FormationPlanner.circle(center, self.num_drones, radius)
+
+        # If only one drone, go directly to waypoint
+        if self.num_drones == 1:
+            positions = [center]
+
+        for i, pos in enumerate(positions):
+            if i < self.num_drones:
+                self.target_positions[i] = clamp_position(pos)
+                self.target_yaws[i] = 0.0
+                self.drone_modes[i] = DroneMode.GOTO
+
+        print(f"[SwarmWorld] Waypoint set: ({x:.2f}, {y:.2f}, {z:.2f}) - {self.num_drones} drones moving")
 
     def _takeoff_drone(self, drone_id: int, altitude: float):
         """Command drone to take off to target altitude."""
@@ -565,6 +605,10 @@ class SwarmWorld:
         self.batteries = {i: 100.0 for i in range(num_drones)}
         self.health_status = {i: True for i in range(num_drones)}
         self.position_controllers = {i: PositionController() for i in range(num_drones)}
+
+        # Apply current speed multiplier to new controllers
+        if self.speed_multiplier != 1.0:
+            self._set_speed(self.speed_multiplier)
 
         self.target_positions.clear()
         self.target_yaws.clear()

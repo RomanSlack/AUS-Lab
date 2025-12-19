@@ -104,6 +104,12 @@ class PositionController:
         self.pid_z.reset()
         self.pid_yaw.reset()
 
+    def set_max_velocity(self, max_velocity: float):
+        """Update maximum velocity for all position PIDs."""
+        self.pid_x.output_limits = (-max_velocity, max_velocity)
+        self.pid_y.output_limits = (-max_velocity, max_velocity)
+        self.pid_z.output_limits = (-max_velocity, max_velocity)
+
     def compute_control(self,
                        current_pos: np.ndarray,
                        target_pos: np.ndarray,

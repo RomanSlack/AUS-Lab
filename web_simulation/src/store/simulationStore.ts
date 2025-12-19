@@ -18,6 +18,10 @@ interface SimulationStore {
   // Selected drone for details view
   selectedDroneId: number | null;
   setSelectedDroneId: (id: number | null) => void;
+
+  // Waypoint (click-to-go target)
+  waypoint: [number, number, number] | null;
+  setWaypoint: (waypoint: [number, number, number] | null) => void;
 }
 
 export const useSimulationStore = create<SimulationStore>((set) => ({
@@ -37,4 +41,8 @@ export const useSimulationStore = create<SimulationStore>((set) => ({
   // Selection
   selectedDroneId: null,
   setSelectedDroneId: (id) => set({ selectedDroneId: id }),
+
+  // Waypoint
+  waypoint: null,
+  setWaypoint: (waypoint) => set({ waypoint }),
 }));

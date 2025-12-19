@@ -603,6 +603,14 @@ def handle_websocket_command(payload: dict) -> dict:
             swarm.enqueue_command(cmd)
             return {"success": True, "message": f"Speed set to {speed}x"}
 
+        elif action == "waypoint":
+            x = params.get("x", 0.0)
+            y = params.get("y", 0.0)
+            z = params.get("z", 1.5)
+            cmd = DroneCommand("waypoint", "all", {"x": x, "y": y, "z": z})
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": f"Waypoint set to ({x:.2f}, {y:.2f}, {z:.2f})"}
+
         else:
             return {"success": False, "message": f"Unknown action: {action}"}
 

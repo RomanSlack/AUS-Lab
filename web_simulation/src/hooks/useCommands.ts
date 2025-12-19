@@ -54,5 +54,8 @@ export function useCommands() {
 
     setSpeed: (speed: number) =>
       sendCommand('speed', { speed }),
+
+    waypoint: (x: number, y: number, z: number) =>
+      sendCommand('waypoint', { x, y, z }),
   };
 }
