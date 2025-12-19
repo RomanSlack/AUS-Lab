@@ -29,6 +29,7 @@ import uvicorn
 import json
 
 from swarm import SwarmWorld, DroneCommand
+from swarm_rust import SwarmWorldRust
 from api_schemas import (
     SpawnRequest, TakeoffRequest, LandRequest, HoverRequest,
     GotoRequest, VelocityRequest, FormationRequest,
@@ -725,18 +726,25 @@ def main():
     # Determine which renderer to use
     use_custom = not args.legacy_gui
 
-    # Use lower physics frequency for web mode (faster with many drones)
-    # 240Hz is overkill for visualization, 120Hz is still smooth
-    physics_freq = 120 if web_mode else 240
-
     # Initialize swarm in main thread
-    swarm = SwarmWorld(
-        num_drones=args.num,
-        gui=not args.headless,
-        physics_hz=physics_freq,
-        control_hz=60,
-        use_custom_renderer=use_custom
-    )
+    if web_mode:
+        # Use blazing fast Rust physics for web mode
+        print("[Main] Using Rust physics engine (high performance)")
+        swarm = SwarmWorldRust(
+            num_drones=args.num,
+            gui=False,
+            physics_hz=240,  # Can handle 240Hz easily
+            control_hz=60
+        )
+    else:
+        # Use PyBullet for local GUI mode (has visualization)
+        swarm = SwarmWorld(
+            num_drones=args.num,
+            gui=not args.headless,
+            physics_hz=240,
+            control_hz=60,
+            use_custom_renderer=use_custom
+        )
 
     # Start API server in background thread
     running = True
