@@ -597,6 +597,12 @@ def handle_websocket_command(payload: dict) -> dict:
             swarm.enqueue_command(cmd)
             return {"success": True, "message": "Simulation reset"}
 
+        elif action == "speed":
+            speed = params.get("speed", 1.0)
+            cmd = DroneCommand("speed", "all", {"speed": speed})
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": f"Speed set to {speed}x"}
+
         else:
             return {"success": False, "message": f"Unknown action: {action}"}
 

@@ -293,6 +293,10 @@ class SwarmWorld:
         elif cmd.cmd_type == "spawn":
             self._respawn(cmd.params.get("num", 5))
 
+        elif cmd.cmd_type == "speed":
+            speed = cmd.params.get("speed", 1.0)
+            self._set_speed(speed)
+
     def _takeoff_drone(self, drone_id: int, altitude: float):
         """Command drone to take off to target altitude."""
         current_pos = self._get_position(drone_id)
