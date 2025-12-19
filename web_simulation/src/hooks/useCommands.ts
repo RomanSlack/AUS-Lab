@@ -57,5 +57,8 @@ export function useCommands() {
 
     waypoint: (x: number, y: number, z: number) =>
       sendCommand('waypoint', { x, y, z }),
+
+    monitor: (x: number, y: number, z: number) =>
+      sendCommand('monitor', { x, y, z }),
   };
 }

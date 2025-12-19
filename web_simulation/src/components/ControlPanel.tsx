@@ -1,16 +1,23 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useCommands } from '../hooks/useCommands';
 import { useSimulationStore } from '../store/simulationStore';
 import type { FormationPattern } from '../types/simulation';
 
 export function ControlPanel() {
   const { takeoff, land, hover, formation, spawn, reset, setSpeed } = useCommands();
-  const { connected, drones } = useSimulationStore();
+  const { connected, drones, monitorMode, setMonitorMode } = useSimulationStore();
 
   const [altitude, setAltitude] = useState(1.5);
   const [droneCount, setDroneCount] = useState(5);
   const [formationRadius, setFormationRadius] = useState(2.0);
-  const [speed, setSpeedValue] = useState(1.0);
+  const [speed, setSpeedValue] = useState(2.0);
+
+  // Send initial speed when connected
+  useEffect(() => {
+    if (connected) {
+      setSpeed(speed);
+    }
+  }, [connected]);
 
   const handleSpeedChange = (newSpeed: number) => {
     setSpeedValue(newSpeed);
@@ -121,14 +128,39 @@ export function ControlPanel() {
             Speed: {speed.toFixed(1)}x
             <input
               type="range"
-              min={0.1}
-              max={3.0}
-              step={0.1}
+              min={0.5}
+              max={10.0}
+              step={0.5}
               value={speed}
               onChange={(e) => handleSpeedChange(Number(e.target.value))}
             />
           </label>
         </div>
+      </section>
+
+      <section>
+        <h3>Click Mode</h3>
+        <div className="button-group">
+          <button
+            className={!monitorMode ? 'active' : ''}
+            onClick={() => setMonitorMode(false)}
+            disabled={!connected}
+          >
+            Waypoint
+          </button>
+          <button
+            className={monitorMode ? 'active monitor' : ''}
+            onClick={() => setMonitorMode(true)}
+            disabled={!connected}
+          >
+            Monitor
+          </button>
+        </div>
+        <p className="mode-hint">
+          {monitorMode
+            ? 'Click to set surveillance orbit point'
+            : 'Click to send drones to location'}
+        </p>
       </section>
 
       <section>

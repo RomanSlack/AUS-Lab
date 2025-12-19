@@ -141,6 +141,30 @@ button.danger:hover:not(:disabled) {
   background: #7c3636;
 }
 
+button.active {
+  background: #4a90d9;
+  color: #fff;
+}
+
+button.active:hover:not(:disabled) {
+  background: #5aa0e9;
+}
+
+button.active.monitor {
+  background: #ff8800;
+}
+
+button.active.monitor:hover:not(:disabled) {
+  background: #ff9922;
+}
+
+.mode-hint {
+  font-size: 0.75rem;
+  color: #888;
+  margin-top: 8px;
+  font-style: italic;
+}
+
 .slider-group {
   margin-top: 12px;
 }

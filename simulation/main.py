@@ -611,6 +611,14 @@ def handle_websocket_command(payload: dict) -> dict:
             swarm.enqueue_command(cmd)
             return {"success": True, "message": f"Waypoint set to ({x:.2f}, {y:.2f}, {z:.2f})"}
 
+        elif action == "monitor":
+            x = params.get("x", 0.0)
+            y = params.get("y", 0.0)
+            z = params.get("z", 1.5)
+            cmd = DroneCommand("monitor", "all", {"x": x, "y": y, "z": z})
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": f"Monitor mode at ({x:.2f}, {y:.2f}, {z:.2f})"}
+
         else:
             return {"success": False, "message": f"Unknown action: {action}"}
 
@@ -717,11 +725,15 @@ def main():
     # Determine which renderer to use
     use_custom = not args.legacy_gui
 
+    # Use lower physics frequency for web mode (faster with many drones)
+    # 240Hz is overkill for visualization, 120Hz is still smooth
+    physics_freq = 120 if web_mode else 240
+
     # Initialize swarm in main thread
     swarm = SwarmWorld(
         num_drones=args.num,
         gui=not args.headless,
-        physics_hz=240,
+        physics_hz=physics_freq,
         control_hz=60,
         use_custom_renderer=use_custom
     )
