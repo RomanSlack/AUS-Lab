@@ -53,9 +53,6 @@ class SwarmWorldRust:
         # Initialize Rust physics engine
         self.swarm = drone_physics.RustSwarm(num_drones, physics_hz)
 
-        # Speed multiplier (for running multiple steps)
-        self.speed_multiplier: float = 1.0
-
         # Battery drain rate
         self.battery_drain_rate = 0.5  # percent per minute
 
@@ -80,12 +77,9 @@ class SwarmWorldRust:
         # Process queued commands
         self._process_commands()
 
-        # Calculate how many physics steps to run based on speed multiplier
-        steps_to_run = max(1, int(self.speed_multiplier))
-
         # Step physics (Rust handles all the heavy lifting)
-        self.swarm.step_multiple(steps_to_run)
-        self.step_count += steps_to_run
+        self.swarm.step()
+        self.step_count += 1
 
         # Update battery levels periodically
         sim_time = self.swarm.get_time()
@@ -177,9 +171,8 @@ class SwarmWorldRust:
 
         elif cmd.cmd_type == "speed":
             speed = cmd.params.get("speed", 1.0)
-            self.speed_multiplier = speed
             self.swarm.set_speed(speed)
-            print(f"[SwarmWorldRust] Speed set to {speed:.1f}x")
+            print(f"[SwarmWorldRust] Drone velocity set to {speed:.1f}x")
 
         elif cmd.cmd_type == "waypoint":
             x = cmd.params.get("x", 0.0)

@@ -10,7 +10,7 @@ export function ControlPanel() {
   const [altitude, setAltitude] = useState(1.5);
   const [droneCount, setDroneCount] = useState(5);
   const [formationRadius, setFormationRadius] = useState(2.0);
-  const [speed, setSpeedValue] = useState(2.0);
+  const [speed, setSpeedValue] = useState(1.0);
 
   // Send initial speed when connected
   useEffect(() => {
@@ -122,15 +122,15 @@ export function ControlPanel() {
       </section>
 
       <section>
-        <h3>Speed</h3>
+        <h3>Drone Velocity</h3>
         <div className="slider-group">
           <label>
             Speed: {speed.toFixed(1)}x
             <input
               type="range"
               min={0.5}
-              max={10.0}
-              step={0.5}
+              max={3.0}
+              step={0.1}
               value={speed}
               onChange={(e) => handleSpeedChange(Number(e.target.value))}
             />
