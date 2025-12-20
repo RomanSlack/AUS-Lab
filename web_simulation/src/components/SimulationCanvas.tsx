@@ -96,11 +96,10 @@ function Scene() {
 
   return (
     <>
-      {/* Lighting */}
-      <ambientLight intensity={0.4} />
+      {/* Additional lighting for shadows (HDRI provides main lighting) */}
       <directionalLight
         position={[10, 20, 10]}
-        intensity={1.2}
+        intensity={0.5}
         castShadow
         shadow-mapSize={[2048, 2048]}
         shadow-camera-far={50}
@@ -109,8 +108,6 @@ function Scene() {
         shadow-camera-top={20}
         shadow-camera-bottom={-20}
       />
-      <directionalLight position={[-5, 10, -10]} intensity={0.3} />
-      <hemisphereLight args={['#87ceeb', '#3d5c3d', 0.3]} />
 
       {/* Clickable Ground */}
       <ClickableGround onGroundClick={handleGroundClick} />
@@ -145,8 +142,8 @@ function Scene() {
         target={[0, 1, 0]}
       />
 
-      {/* Environment for reflections */}
-      <Environment preset="city" />
+      {/* HDRI Environment for lighting and skybox */}
+      <Environment files="/autumn_hill_view_4k.hdr" background />
     </>
   );
 }
@@ -159,8 +156,6 @@ export function SimulationCanvas() {
       dpr={[1, 2]}
       shadows
     >
-      <color attach="background" args={['#1a1a2e']} />
-      <fog attach="fog" args={['#1a1a2e', 30, 60]} />
       <Scene />
       {import.meta.env.DEV && <Stats />}
     </Canvas>
