@@ -1,0 +1,18 @@
+[package]
+name = "drone_physics"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "drone_physics"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.20", features = ["extension-module"] }
+rayon = "1.8"  # Parallel iteration
+nalgebra = "0.32"  # Linear algebra (optional but nice)
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

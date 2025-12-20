@@ -22,18 +22,18 @@ os.environ['__GLX_VENDOR_LIBRARY_NAME'] = 'nvidia'
 os.environ['__GL_SYNC_TO_VBLANK'] = '0'
 os.environ['vblank_mode'] = '0'
 
-import logging
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+import json
 
 from swarm import SwarmWorld, DroneCommand
+from swarm_rust import SwarmWorldRust
 from api_schemas import (
     SpawnRequest, TakeoffRequest, LandRequest, HoverRequest,
     GotoRequest, VelocityRequest, FormationRequest,
-    StateResponse, CommandResponse, ResetResponse, ClickCoordsResponse,
-    HivemindMoveRequest
+    StateResponse, CommandResponse, ResetResponse, ClickCoordsResponse
 )
 
 
@@ -41,6 +41,39 @@ from api_schemas import (
 swarm: SwarmWorld = None
 sim_thread: threading.Thread = None
 running = True
+web_mode = False  # WebSocket mode flag
+
+
+class ConnectionManager:
+    """Manages WebSocket connections for real-time state broadcasting."""
+
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        print(f"[WebSocket] Client connected. Total: {len(self.active_connections)}")
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+        print(f"[WebSocket] Client disconnected. Total: {len(self.active_connections)}")
+
+    async def broadcast(self, message: dict):
+        """Broadcast message to all connected clients."""
+        disconnected = []
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception:
+                disconnected.append(connection)
+        # Clean up disconnected clients
+        for conn in disconnected:
+            self.disconnect(conn)
+
+
+manager = ConnectionManager()
 
 
 def run_api_server():
@@ -55,20 +88,39 @@ def run_api_server():
 
 def simulation_loop():
     """Main thread running the physics simulation with GUI."""
-    global swarm, running
+    global swarm, running, web_mode
 
     print("[SimLoop] Starting simulation loop in MAIN THREAD", flush=True)
 
+    # For Rust physics, we need to throttle to real-time
+    # Physics runs at 240Hz = 4.167ms per step
+    physics_dt = 1.0 / 240.0
+
     try:
         step_count = 0
+        last_step_time = time.perf_counter()
+
         while running:
             if swarm is not None:
                 if step_count == 0:
                     print(f"[SimLoop] Beginning first step...", flush=True)
+                    last_step_time = time.perf_counter()
+
                 if not swarm.step():
                     print("[SimLoop] Simulation ended", flush=True)
                     break
+
                 step_count += 1
+
+                # Real-time throttling for Rust physics (web mode)
+                if web_mode:
+                    current_time = time.perf_counter()
+                    elapsed = current_time - last_step_time
+                    sleep_time = physics_dt - elapsed
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+                    last_step_time = time.perf_counter()
+
                 if step_count % 240 == 0:  # Print every second
                     print(f"[SimLoop] Running... {step_count} steps completed", flush=True)
             else:
@@ -119,13 +171,13 @@ Control a physics-based multi-drone simulation with real-time commands.
     redoc_url="/redoc"
 )
 
-# Add CORS middleware
+# Add CORS middleware for web frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -197,7 +249,6 @@ async def takeoff(request: TakeoffRequest):
     {"ids": ["all"], "altitude": 1.5}
     ```
     """
-    print(f"[ENDPOINT] /takeoff received: ids={request.ids}, altitude={request.altitude}")
     if swarm is None:
         raise HTTPException(status_code=500, detail="Swarm not initialized")
 
@@ -215,7 +266,6 @@ async def takeoff(request: TakeoffRequest):
 
     cmd = DroneCommand("takeoff", drone_ids, {"altitude": request.altitude})
     swarm.enqueue_command(cmd)
-    print(f"[ENDPOINT] Command enqueued: {cmd}")
 
     return CommandResponse(
         success=True,
@@ -507,70 +557,154 @@ async def get_click_coords():
         message=f"Last click at ({x:.2f}, {y:.2f}, {z:.2f})"
     )
 
-@app.post("/hivemind/enable", response_model=CommandResponse, tags=["Hivemind Control"])
-async def enable_hivemind():
-    """
-    **Enable Hivemind Mode**
 
-    Activates hivemind mode, where all drones act as a single entity.
-    """
+# WebSocket endpoint for real-time communication
+
+def handle_websocket_command(payload: dict) -> dict:
+    """Handle a command received via WebSocket."""
     if swarm is None:
-        raise HTTPException(status_code=500, detail="Swarm not initialized")
+        return {"success": False, "message": "Swarm not initialized"}
 
-    cmd = DroneCommand("enable_hivemind", "all", {})
-    swarm.enqueue_command(cmd)
+    action = payload.get("action")
+    params = payload.get("params", {})
 
-    return CommandResponse(
-        success=True,
-        message="Hivemind mode enabled",
-        affected_drones=list(range(swarm.num_drones))
-    )
+    try:
+        if action == "takeoff":
+            ids = params.get("ids", ["all"])
+            altitude = params.get("altitude", 1.0)
+            drone_ids = "all" if ids == ["all"] else ids
+            cmd = DroneCommand("takeoff", drone_ids, {"altitude": altitude})
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": f"Takeoff to {altitude}m"}
 
-@app.post("/hivemind/disable", response_model=CommandResponse, tags=["Hivemind Control"])
-async def disable_hivemind():
+        elif action == "land":
+            ids = params.get("ids", ["all"])
+            drone_ids = "all" if ids == ["all"] else ids
+            cmd = DroneCommand("land", drone_ids, {})
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": "Land commanded"}
+
+        elif action == "hover":
+            ids = params.get("ids", ["all"])
+            drone_ids = "all" if ids == ["all"] else ids
+            cmd = DroneCommand("hover", drone_ids, {})
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": "Hover commanded"}
+
+        elif action == "goto":
+            cmd = DroneCommand("goto", [params["id"]], params)
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": f"Drone {params['id']} going to position"}
+
+        elif action == "velocity":
+            cmd = DroneCommand("velocity", [params["id"]], params)
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": f"Drone {params['id']} velocity set"}
+
+        elif action == "formation":
+            cmd = DroneCommand("formation", "all", params)
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": f"Formation '{params.get('pattern')}' commanded"}
+
+        elif action == "spawn":
+            num = params.get("num", 5)
+            cmd = DroneCommand("spawn", "all", {"num": num})
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": f"Spawning {num} drones"}
+
+        elif action == "reset":
+            cmd = DroneCommand("reset", "all", {})
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": "Simulation reset"}
+
+        elif action == "speed":
+            speed = params.get("speed", 1.0)
+            cmd = DroneCommand("speed", "all", {"speed": speed})
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": f"Speed set to {speed}x"}
+
+        elif action == "waypoint":
+            x = params.get("x", 0.0)
+            y = params.get("y", 0.0)
+            z = params.get("z", 1.5)
+            cmd = DroneCommand("waypoint", "all", {"x": x, "y": y, "z": z})
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": f"Waypoint set to ({x:.2f}, {y:.2f}, {z:.2f})"}
+
+        elif action == "monitor":
+            x = params.get("x", 0.0)
+            y = params.get("y", 0.0)
+            z = params.get("z", 1.5)
+            cmd = DroneCommand("monitor", "all", {"x": x, "y": y, "z": z})
+            swarm.enqueue_command(cmd)
+            return {"success": True, "message": f"Monitor mode at ({x:.2f}, {y:.2f}, {z:.2f})"}
+
+        else:
+            return {"success": False, "message": f"Unknown action: {action}"}
+
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
     """
-    **Disable Hivemind Mode**
+    WebSocket endpoint for real-time bidirectional communication.
 
-    Deactivates hivemind mode, returning drones to individual control.
+    Sends state updates at 60Hz and receives commands.
     """
-    if swarm is None:
-        raise HTTPException(status_code=500, detail="Swarm not initialized")
+    await manager.connect(websocket)
 
-    cmd = DroneCommand("disable_hivemind", "all", {})
-    swarm.enqueue_command(cmd)
+    async def send_state():
+        """Send state updates to this client at 60Hz."""
+        try:
+            while True:
+                if swarm is not None:
+                    state_data = swarm.get_state()
+                    await websocket.send_json({
+                        "type": "state",
+                        "payload": {
+                            "drones": state_data["drones"],
+                            "timestamp": state_data["timestamp"]
+                        }
+                    })
+                await asyncio.sleep(1/60)  # 60Hz
+        except Exception as e:
+            print(f"[WebSocket] Send error: {e}")
 
-    return CommandResponse(
-        success=True,
-        message="Hivemind mode disabled",
-        affected_drones=list(range(swarm.num_drones))
-    )
+    async def receive_commands():
+        """Receive and handle commands from this client."""
+        try:
+            while True:
+                data = await websocket.receive_text()
+                message = json.loads(data)
 
-@app.post("/hivemind/move", response_model=CommandResponse, tags=["Hivemind Control"])
-async def move_hivemind(request: HivemindMoveRequest):
-    """
-    **Move the Hivemind**
+                if message.get("type") == "command":
+                    result = handle_websocket_command(message.get("payload", {}))
+                    await websocket.send_json({
+                        "type": "ack",
+                        "payload": result
+                    })
+        except WebSocketDisconnect:
+            pass
+        except Exception as e:
+            print(f"[WebSocket] Receive error: {e}")
 
-    Moves the entire swarm as a single entity.
+    # Run both tasks concurrently
+    send_task = asyncio.create_task(send_state())
+    receive_task = asyncio.create_task(receive_commands())
 
-    - **position**: Target center of the swarm [x, y, z]
-    - **yaw**: Target yaw of the swarm
-    - **scale**: Target scale of the swarm
-    """
-    if swarm is None:
-        raise HTTPException(status_code=500, detail="Swarm not initialized")
-
-    cmd = DroneCommand("move_hivemind", "all", {
-        "position": request.position,
-        "yaw": request.yaw,
-        "scale": request.scale,
-    })
-    swarm.enqueue_command(cmd)
-
-    return CommandResponse(
-        success=True,
-        message="Hivemind move commanded",
-        affected_drones=list(range(swarm.num_drones))
-    )
+    try:
+        # Wait for either task to complete (usually due to disconnect)
+        done, pending = await asyncio.wait(
+            [send_task, receive_task],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+        # Cancel the other task
+        for task in pending:
+            task.cancel()
+    finally:
+        manager.disconnect(websocket)
 
 
 def signal_handler(sig, frame):
@@ -583,21 +717,25 @@ def signal_handler(sig, frame):
 
 def main():
     """Main entry point."""
-    # Set up detailed logging
-    logging.basicConfig(level=logging.DEBUG)
-
-    global args, swarm, sim_thread, running
+    global args, swarm, sim_thread, running, web_mode
 
     # Parse arguments
     parser = argparse.ArgumentParser(description="AUS-Lab UAV Swarm Simulation")
-    parser.add_argument("--num", type=int, default=5, help="Number of drones (default: 5)")
+    parser.add_argument("--num", type=int, default=50, help="Number of drones (default: 50)")
     parser.add_argument("--headless", action="store_true", help="Run without GUI")
     parser.add_argument("--legacy-gui", action="store_true",
                         help="Use legacy PyBullet GUI instead of custom renderer (may flicker on some systems)")
+    parser.add_argument("--web", action="store_true",
+                        help="Enable web mode: runs headless with WebSocket streaming for Three.js frontend")
     parser.add_argument("--port", type=int, default=8000, help="API server port (default: 8000)")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="API server host (default: 0.0.0.0)")
 
     args = parser.parse_args()
+
+    # Web mode implies headless
+    web_mode = args.web
+    if web_mode:
+        args.headless = True
 
     # Register signal handler
     signal.signal(signal.SIGINT, signal_handler)
@@ -608,13 +746,24 @@ def main():
     use_custom = not args.legacy_gui
 
     # Initialize swarm in main thread
-    swarm = SwarmWorld(
-        num_drones=args.num,
-        gui=not args.headless,
-        physics_hz=240,
-        control_hz=60,
-        use_custom_renderer=use_custom
-    )
+    if web_mode:
+        # Use blazing fast Rust physics for web mode
+        print("[Main] Using Rust physics engine (high performance)")
+        swarm = SwarmWorldRust(
+            num_drones=args.num,
+            gui=False,
+            physics_hz=240,  # Can handle 240Hz easily
+            control_hz=60
+        )
+    else:
+        # Use PyBullet for local GUI mode (has visualization)
+        swarm = SwarmWorld(
+            num_drones=args.num,
+            gui=not args.headless,
+            physics_hz=240,
+            control_hz=60,
+            use_custom_renderer=use_custom
+        )
 
     # Start API server in background thread
     running = True
@@ -623,9 +772,14 @@ def main():
 
     print(f"[Main] API server starting on http://{args.host}:{args.port}")
     print(f"\n{'='*60}")
-    print(f"  Interactive API Docs: http://localhost:{args.port}/docs")
-    print(f"  Alternative Docs:     http://localhost:{args.port}/redoc")
-    print(f"  Manual Control:       python manual_control.py")
+    if web_mode:
+        print(f"  WEB MODE ENABLED - Headless with WebSocket streaming")
+        print(f"  WebSocket URL:        ws://localhost:{args.port}/ws")
+        print(f"  Start web frontend:   cd web_simulation && npm run dev")
+    else:
+        print(f"  Interactive API Docs: http://localhost:{args.port}/docs")
+        print(f"  Alternative Docs:     http://localhost:{args.port}/redoc")
+        print(f"  Manual Control:       python manual_control.py")
     print(f"{'='*60}\n")
 
     # Give API server time to start

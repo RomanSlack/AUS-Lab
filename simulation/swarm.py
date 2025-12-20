@@ -15,7 +15,6 @@ from gym_pybullet_drones.utils.enums import DroneModel, Physics
 from controllers import PositionController, FormationPlanner, clamp_position, clamp_velocity
 from mouse_handler import MouseInteractionHandler
 from custom_renderer import CustomRenderer
-from hivemind_controller import HivemindController
 
 
 class DroneMode(Enum):
@@ -26,7 +25,7 @@ class DroneMode(Enum):
     HOVER = "hover"
     GOTO = "goto"
     VELOCITY = "velocity"
-    HIVE_MIND = "hive_mind"
+    MONITOR = "monitor"  # Orbital surveillance mode
 
 
 class DroneCommand:
@@ -71,7 +70,7 @@ class SwarmWorld:
         self.command_queue: Queue = Queue()
 
         # Initialize environment
-        self.initial_xyzs = self._init_environment()
+        self._init_environment()
 
         # Per-drone state
         self.drone_modes: Dict[int, DroneMode] = {i: DroneMode.IDLE for i in range(num_drones)}
@@ -85,8 +84,6 @@ class SwarmWorld:
         self.position_controllers: Dict[int, PositionController] = {
             i: PositionController() for i in range(num_drones)
         }
-        self.hivemind_controller = HivemindController(self.num_drones, self.initial_xyzs)
-        self.hivemind_mode_active = False
 
         # Battery simulation
         self.batteries: Dict[int, float] = {i: 100.0 for i in range(num_drones)}
@@ -94,6 +91,16 @@ class SwarmWorld:
 
         # Health status
         self.health_status: Dict[int, bool] = {i: True for i in range(num_drones)}
+
+        # Speed multiplier (1.0 = normal speed)
+        self.speed_multiplier: float = 1.0
+
+        # Monitor/surveillance mode state
+        self.monitor_center: Optional[np.ndarray] = None
+        self.monitor_radii: Dict[int, float] = {}  # Orbital radius per drone
+        self.monitor_altitudes: Dict[int, float] = {}  # Altitude per drone
+        self.monitor_angles: Dict[int, float] = {}  # Current angle per drone
+        self.monitor_orbit_speed: float = 0.3  # Radians per second
 
         # Timing
         self.sim_time = 0.0
@@ -173,14 +180,10 @@ class SwarmWorld:
 
         else:
             print("[SwarmWorld] Running in headless mode (no visualization)")
-        
-        return initial_xyzs
 
     def enqueue_command(self, command: DroneCommand):
         """Thread-safe command queuing."""
-        print(f"[QUEUE] Command added to queue: {command.cmd_type}")
         self.command_queue.put(command)
-        print(f"[QUEUE] Queue size now: {self.command_queue.qsize()}")
 
     def step(self) -> bool:
         """
@@ -189,10 +192,6 @@ class SwarmWorld:
         Returns:
             True if simulation should continue, False to stop
         """
-        print(f"[SIMLOOP] step() called. Queue has {self.command_queue.qsize()} commands")
-        if not self.command_queue.empty():
-            print(f"[SIMLOOP] Processing commands from queue")
-
         # Handle rendering and mouse input
         if self.custom_renderer is not None:
             # Custom renderer handles both rendering and mouse input
@@ -223,32 +222,31 @@ class SwarmWorld:
         # Process queued commands
         self._process_commands()
 
-        # Control update if it's time
-        if self.sim_time - self.last_control_time >= self.control_dt - 1e-6:
-            self._control_update()
-            self.last_control_time = self.sim_time
+        # Calculate how many physics steps to run based on speed multiplier
+        # This allows the simulation to run faster than real-time
+        steps_to_run = max(1, int(self.speed_multiplier))
 
-        # Step physics simulation
-        # Gymnasium API returns 5 values: obs, rewards, terminated, truncated, infos
-        # Older gym-pybullet-drones might use old Gym API (4 values)
-        step_result = self.env.step(self._compute_actions())
-        if len(step_result) == 5:
-            obs, rewards, terminated, truncated, infos = step_result
-            dones = {i: terminated.get(i, False) or truncated.get(i, False)
-                    for i in range(self.num_drones)} if isinstance(terminated, dict) else \
-                   {i: terminated or truncated for i in range(self.num_drones)}
-        else:
-            obs, rewards, dones, infos = step_result
+        for _ in range(steps_to_run):
+            # Control update if it's time
+            if self.sim_time - self.last_control_time >= self.control_dt - 1e-6:
+                self._control_update()
+                self.last_control_time = self.sim_time
 
-        # Update simulation time
-        self.sim_time += self.physics_dt
-        self.step_count += 1
+            # Step physics simulation
+            # Gymnasium API returns 5 values: obs, rewards, terminated, truncated, infos
+            # Older gym-pybullet-drones might use old Gym API (4 values)
+            step_result = self.env.step(self._compute_actions())
+            if len(step_result) == 5:
+                obs, rewards, terminated, truncated, infos = step_result
+                dones = {i: terminated.get(i, False) or truncated.get(i, False)
+                        for i in range(self.num_drones)} if isinstance(terminated, dict) else \
+                       {i: terminated or truncated for i in range(self.num_drones)}
+            else:
+                obs, rewards, dones, infos = step_result
 
-        # Log drone positions after physics step
-        if self.step_count % self.control_hz == 0:  # Log at control frequency
-            for i in range(self.num_drones):
-                pos = self._get_position(i)
-                print(f"[STATE] Drone {i} position: {pos}")
+            # Update simulation time
+            self.sim_time += self.physics_dt
+            self.step_count += 1
 
         # Update battery levels
         if self.step_count % self.physics_hz == 0:  # Once per second
@@ -267,18 +265,6 @@ class SwarmWorld:
                 self._execute_command(cmd)
             except Empty:
                 break
-
-    def set_hivemind_mode(self, active: bool):
-        """Enable or disable hivemind mode."""
-        self.hivemind_mode_active = active
-        if active:
-            for i in range(self.num_drones):
-                self.drone_modes[i] = DroneMode.HIVE_MIND
-            print("[SwarmWorld] Hivemind mode ACTIVATED")
-        else:
-            for i in range(self.num_drones):
-                self.drone_modes[i] = DroneMode.HOVER
-            print("[SwarmWorld] Hivemind mode DEACTIVATED")
 
     def _execute_command(self, cmd: DroneCommand):
         """Execute a single command."""
@@ -323,21 +309,80 @@ class SwarmWorld:
         elif cmd.cmd_type == "spawn":
             self._respawn(cmd.params.get("num", 5))
 
-        elif cmd.cmd_type == "enable_hivemind":
-            self.set_hivemind_mode(True)
+        elif cmd.cmd_type == "speed":
+            speed = cmd.params.get("speed", 1.0)
+            self._set_speed(speed)
 
-        elif cmd.cmd_type == "disable_hivemind":
-            self.set_hivemind_mode(False)
+        elif cmd.cmd_type == "waypoint":
+            x = cmd.params.get("x", 0.0)
+            y = cmd.params.get("y", 0.0)
+            z = cmd.params.get("z", 1.5)
+            self._goto_waypoint(x, y, z)
 
-        elif cmd.cmd_type == "move_hivemind":
-            position = np.array(cmd.params.get("position"))
-            yaw = cmd.params.get("yaw", 0.0)
-            scale = cmd.params.get("scale", 1.0)
-            self.hivemind_controller.set_target(position, yaw, scale)
+        elif cmd.cmd_type == "monitor":
+            x = cmd.params.get("x", 0.0)
+            y = cmd.params.get("y", 0.0)
+            z = cmd.params.get("z", 1.5)
+            self._start_monitor(x, y, z)
+
+    def _set_speed(self, speed_multiplier: float):
+        """Set speed multiplier for all drones (affects max velocity)."""
+        self.speed_multiplier = speed_multiplier
+        base_velocity = 2.0  # Base max velocity in m/s
+        new_max_velocity = base_velocity * speed_multiplier
+
+        for drone_id in range(self.num_drones):
+            self.position_controllers[drone_id].set_max_velocity(new_max_velocity)
+
+        print(f"[SwarmWorld] Speed set to {speed_multiplier:.1f}x (max velocity: {new_max_velocity:.1f} m/s)")
+
+    def _goto_waypoint(self, x: float, y: float, z: float):
+        """Command all drones to fly to a formation centered at the waypoint."""
+        center = np.array([x, y, z])
+
+        # Use circle formation around the waypoint
+        radius = 0.8  # Compact formation
+        positions = FormationPlanner.circle(center, self.num_drones, radius)
+
+        # If only one drone, go directly to waypoint
+        if self.num_drones == 1:
+            positions = [center]
+
+        for i, pos in enumerate(positions):
+            if i < self.num_drones:
+                self.target_positions[i] = clamp_position(pos)
+                self.target_yaws[i] = 0.0
+                self.drone_modes[i] = DroneMode.GOTO
+
+        print(f"[SwarmWorld] Waypoint set: ({x:.2f}, {y:.2f}, {z:.2f}) - {self.num_drones} drones moving")
+
+    def _start_monitor(self, x: float, y: float, z: float):
+        """Start orbital surveillance mode around a center point."""
+        self.monitor_center = np.array([x, y, z])
+
+        # Distribute drones at different altitudes and radii
+        for i in range(self.num_drones):
+            # Vary radius: inner drones closer, outer drones farther
+            # Range from 1.0 to 3.0 meters
+            radius_factor = (i % 3) / 2.0  # 0, 0.5, or 1.0
+            self.monitor_radii[i] = 1.0 + radius_factor * 2.0
+
+            # Vary altitude: spread from z-1 to z+2
+            altitude_layers = min(self.num_drones, 5)  # Max 5 altitude layers
+            layer = i % altitude_layers
+            altitude_offset = (layer - altitude_layers / 2) * 0.6
+            self.monitor_altitudes[i] = max(0.5, z + altitude_offset)
+
+            # Starting angle: evenly distributed
+            self.monitor_angles[i] = (2 * np.pi * i) / self.num_drones
+
+            # Set mode
+            self.drone_modes[i] = DroneMode.MONITOR
+
+        print(f"[SwarmWorld] Monitor mode started at ({x:.2f}, {y:.2f}, {z:.2f}) - {self.num_drones} drones orbiting")
 
     def _takeoff_drone(self, drone_id: int, altitude: float):
         """Command drone to take off to target altitude."""
-        print(f"[HANDLER] Executing takeoff for drone: {drone_id}")
         current_pos = self._get_position(drone_id)
         target_pos = current_pos.copy()
         target_pos[2] = altitude
@@ -346,7 +391,6 @@ class SwarmWorld:
         self.target_yaws[drone_id] = 0.0
         self.drone_modes[drone_id] = DroneMode.TAKEOFF
         print(f"[SwarmWorld] Drone {drone_id} taking off to altitude {altitude}m")
-        print(f"[HANDLER] Takeoff execution complete for drone: {drone_id}")
 
     def _land_drone(self, drone_id: int):
         """Command drone to land."""
@@ -418,15 +462,10 @@ class SwarmWorld:
 
     def _control_update(self):
         """Update control commands for all drones."""
-        if self.hivemind_mode_active:
-            drone_target_positions = self.hivemind_controller.update()
-            for i in range(self.num_drones):
-                self.target_positions[i] = drone_target_positions[i]
-
         for drone_id in range(self.num_drones):
             mode = self.drone_modes[drone_id]
 
-            if mode in [DroneMode.TAKEOFF, DroneMode.LANDING, DroneMode.GOTO, DroneMode.HOVER, DroneMode.HIVE_MIND]:
+            if mode in [DroneMode.TAKEOFF, DroneMode.LANDING, DroneMode.GOTO, DroneMode.HOVER]:
                 # Position control mode
                 if drone_id in self.target_positions:
                     current_pos = self._get_position(drone_id)
@@ -447,6 +486,28 @@ class SwarmWorld:
                 # Direct velocity control - already set in target_velocities
                 pass
 
+            elif mode == DroneMode.MONITOR:
+                # Orbital surveillance mode - continuously update orbit position
+                if self.monitor_center is not None and drone_id in self.monitor_angles:
+                    # Update angle (orbit around center)
+                    self.monitor_angles[drone_id] += self.monitor_orbit_speed * self.control_dt
+
+                    # Calculate orbital position
+                    angle = self.monitor_angles[drone_id]
+                    radius = self.monitor_radii.get(drone_id, 2.0)
+                    altitude = self.monitor_altitudes.get(drone_id, 1.5)
+
+                    target_x = self.monitor_center[0] + radius * np.cos(angle)
+                    target_y = self.monitor_center[1] + radius * np.sin(angle)
+                    target_z = altitude
+
+                    self.target_positions[drone_id] = clamp_position(np.array([target_x, target_y, target_z]))
+
+                    # Face towards center
+                    dx = self.monitor_center[0] - target_x
+                    dy = self.monitor_center[1] - target_y
+                    self.target_yaws[drone_id] = np.arctan2(dy, dx)
+
             elif mode == DroneMode.IDLE:
                 # Keep motors at minimum
                 self.target_velocities[drone_id] = np.zeros(3)
@@ -463,7 +524,7 @@ class SwarmWorld:
         for drone_id in range(self.num_drones):
             mode = self.drone_modes[drone_id]
 
-            if mode in [DroneMode.TAKEOFF, DroneMode.LANDING, DroneMode.GOTO, DroneMode.HOVER]:
+            if mode in [DroneMode.TAKEOFF, DroneMode.LANDING, DroneMode.GOTO, DroneMode.HOVER, DroneMode.MONITOR]:
                 # Use position controller
                 if drone_id in self.target_positions:
                     current_pos = self._get_position(drone_id)
@@ -492,7 +553,6 @@ class SwarmWorld:
                     else:
                         # Hovering or very small movement
                         actions[drone_id] = [0, 0, 0, 0]
-                    print(f"[PHYSICS] Drone {drone_id} action computed: {actions[drone_id]}")
                 else:
                     actions[drone_id] = [0, 0, 0, 0]
 
@@ -506,7 +566,6 @@ class SwarmWorld:
                     actions[drone_id] = [direction[0], direction[1], direction[2], speed_frac]
                 else:
                     actions[drone_id] = [0, 0, 0, 0]
-                print(f"[PHYSICS] Drone {drone_id} action computed: {actions[drone_id]}")
 
             else:  # IDLE
                 actions[drone_id] = [0, 0, 0, 0]
@@ -612,6 +671,10 @@ class SwarmWorld:
         self.batteries = {i: 100.0 for i in range(num_drones)}
         self.health_status = {i: True for i in range(num_drones)}
         self.position_controllers = {i: PositionController() for i in range(num_drones)}
+
+        # Apply current speed multiplier to new controllers
+        if self.speed_multiplier != 1.0:
+            self._set_speed(self.speed_multiplier)
 
         self.target_positions.clear()
         self.target_yaws.clear()
