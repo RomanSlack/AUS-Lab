@@ -1,0 +1,30 @@
+.App {
+  text-align: center;
+}
+
+.App-header {
+  background-color: #282c34;
+  padding: 20px;
+  color: white;
+}
+
+.simulation-container {
+  width: 80%;
+  height: 500px;
+  margin: 20px auto;
+  border: 1px solid #ccc;
+}
+
+.command-container {
+  margin: 20px;
+}
+
+.command-container input {
+  padding: 10px;
+  width: 300px;
+  margin-right: 10px;
+}
+
+.command-container button {
+  padding: 10px 20px;
+}
