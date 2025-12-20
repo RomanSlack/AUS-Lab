@@ -22,7 +22,9 @@ os.environ['__GLX_VENDOR_LIBRARY_NAME'] = 'nvidia'
 os.environ['__GL_SYNC_TO_VBLANK'] = '0'
 os.environ['vblank_mode'] = '0'
 
+import logging
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
 
@@ -30,7 +32,8 @@ from swarm import SwarmWorld, DroneCommand
 from api_schemas import (
     SpawnRequest, TakeoffRequest, LandRequest, HoverRequest,
     GotoRequest, VelocityRequest, FormationRequest,
-    StateResponse, CommandResponse, ResetResponse, ClickCoordsResponse
+    StateResponse, CommandResponse, ResetResponse, ClickCoordsResponse,
+    HivemindMoveRequest
 )
 
 
@@ -116,6 +119,15 @@ Control a physics-based multi-drone simulation with real-time commands.
     redoc_url="/redoc"
 )
 
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
+
 
 # API Endpoints
 
@@ -185,6 +197,7 @@ async def takeoff(request: TakeoffRequest):
     {"ids": ["all"], "altitude": 1.5}
     ```
     """
+    print(f"[ENDPOINT] /takeoff received: ids={request.ids}, altitude={request.altitude}")
     if swarm is None:
         raise HTTPException(status_code=500, detail="Swarm not initialized")
 
@@ -202,6 +215,7 @@ async def takeoff(request: TakeoffRequest):
 
     cmd = DroneCommand("takeoff", drone_ids, {"altitude": request.altitude})
     swarm.enqueue_command(cmd)
+    print(f"[ENDPOINT] Command enqueued: {cmd}")
 
     return CommandResponse(
         success=True,
@@ -493,6 +507,71 @@ async def get_click_coords():
         message=f"Last click at ({x:.2f}, {y:.2f}, {z:.2f})"
     )
 
+@app.post("/hivemind/enable", response_model=CommandResponse, tags=["Hivemind Control"])
+async def enable_hivemind():
+    """
+    **Enable Hivemind Mode**
+
+    Activates hivemind mode, where all drones act as a single entity.
+    """
+    if swarm is None:
+        raise HTTPException(status_code=500, detail="Swarm not initialized")
+
+    cmd = DroneCommand("enable_hivemind", "all", {})
+    swarm.enqueue_command(cmd)
+
+    return CommandResponse(
+        success=True,
+        message="Hivemind mode enabled",
+        affected_drones=list(range(swarm.num_drones))
+    )
+
+@app.post("/hivemind/disable", response_model=CommandResponse, tags=["Hivemind Control"])
+async def disable_hivemind():
+    """
+    **Disable Hivemind Mode**
+
+    Deactivates hivemind mode, returning drones to individual control.
+    """
+    if swarm is None:
+        raise HTTPException(status_code=500, detail="Swarm not initialized")
+
+    cmd = DroneCommand("disable_hivemind", "all", {})
+    swarm.enqueue_command(cmd)
+
+    return CommandResponse(
+        success=True,
+        message="Hivemind mode disabled",
+        affected_drones=list(range(swarm.num_drones))
+    )
+
+@app.post("/hivemind/move", response_model=CommandResponse, tags=["Hivemind Control"])
+async def move_hivemind(request: HivemindMoveRequest):
+    """
+    **Move the Hivemind**
+
+    Moves the entire swarm as a single entity.
+
+    - **position**: Target center of the swarm [x, y, z]
+    - **yaw**: Target yaw of the swarm
+    - **scale**: Target scale of the swarm
+    """
+    if swarm is None:
+        raise HTTPException(status_code=500, detail="Swarm not initialized")
+
+    cmd = DroneCommand("move_hivemind", "all", {
+        "position": request.position,
+        "yaw": request.yaw,
+        "scale": request.scale,
+    })
+    swarm.enqueue_command(cmd)
+
+    return CommandResponse(
+        success=True,
+        message="Hivemind move commanded",
+        affected_drones=list(range(swarm.num_drones))
+    )
+
 
 def signal_handler(sig, frame):
     """Handle Ctrl+C gracefully."""
@@ -504,6 +583,9 @@ def signal_handler(sig, frame):
 
 def main():
     """Main entry point."""
+    # Set up detailed logging
+    logging.basicConfig(level=logging.DEBUG)
+
     global args, swarm, sim_thread, running
 
     # Parse arguments

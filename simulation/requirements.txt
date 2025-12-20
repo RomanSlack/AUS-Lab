@@ -6,3 +6,5 @@ pydantic==2.8.2
 gymnasium
 stable-baselines3
 opencv-python
+pytest>=8.0.0
+pytest-mock>=3.12.0

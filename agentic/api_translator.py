@@ -153,6 +153,19 @@ class SimulationAPIClient:
         elif action_type == "reset":
             return "/reset", {}
 
+        elif action_type == "enable_hivemind":
+            return "/hivemind/enable", {}
+
+        elif action_type == "disable_hivemind":
+            return "/hivemind/disable", {}
+
+        elif action_type == "move_hivemind":
+            return "/hivemind/move", {
+                "position": params.get("position", [0.0, 0.0, 1.0]),
+                "yaw": params.get("yaw", 0.0),
+                "scale": params.get("scale", 1.0)
+            }
+
         else:
             raise ValueError(f"Unknown action type: {action_type}")
 

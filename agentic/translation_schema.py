@@ -12,7 +12,8 @@ class DroneAction(BaseModel):
 
     action_type: Literal[
         "takeoff", "land", "hover", "goto", "velocity",
-        "formation", "spawn", "reset"
+        "formation", "spawn", "reset", "enable_hivemind",
+        "disable_hivemind", "move_hivemind"
     ] = Field(description="Type of action to perform")
 
     drone_ids: Union[List[int], Literal["all"]] = Field(
@@ -169,6 +170,40 @@ ACTION_TEMPLATES = {
             "action_type": "velocity",
             "drone_ids": [0],
             "parameters": {"id": 0, "vx": 1.0, "vy": 0.0, "vz": 0.0, "yaw_rate": 0.0}
+        }
+    },
+
+    "enable_hivemind": {
+        "description": "Enable hivemind mode",
+        "parameters": {},
+        "example": {
+            "action_type": "enable_hivemind",
+            "drone_ids": "all",
+            "parameters": {}
+        }
+    },
+
+    "disable_hivemind": {
+        "description": "Disable hivemind mode",
+        "parameters": {},
+        "example": {
+            "action_type": "disable_hivemind",
+            "drone_ids": "all",
+            "parameters": {}
+        }
+    },
+
+    "move_hivemind": {
+        "description": "Move the entire swarm as a single entity",
+        "parameters": {
+            "position": {"type": "array", "length": 3, "description": "Target center of the swarm"},
+            "yaw": {"type": "float", "range": [-3.14, 3.14], "unit": "radians", "optional": True},
+            "scale": {"type": "float", "range": [0.1, 5.0], "optional": True}
+        },
+        "example": {
+            "action_type": "move_hivemind",
+            "drone_ids": "all",
+            "parameters": {"position": [2.0, 2.0, 1.5], "yaw": 0.78, "scale": 1.2}
         }
     }
 }

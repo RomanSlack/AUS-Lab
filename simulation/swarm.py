@@ -15,6 +15,7 @@ from gym_pybullet_drones.utils.enums import DroneModel, Physics
 from controllers import PositionController, FormationPlanner, clamp_position, clamp_velocity
 from mouse_handler import MouseInteractionHandler
 from custom_renderer import CustomRenderer
+from hivemind_controller import HivemindController
 
 
 class DroneMode(Enum):
@@ -25,6 +26,7 @@ class DroneMode(Enum):
     HOVER = "hover"
     GOTO = "goto"
     VELOCITY = "velocity"
+    HIVE_MIND = "hive_mind"
 
 
 class DroneCommand:
@@ -69,7 +71,7 @@ class SwarmWorld:
         self.command_queue: Queue = Queue()
 
         # Initialize environment
-        self._init_environment()
+        self.initial_xyzs = self._init_environment()
 
         # Per-drone state
         self.drone_modes: Dict[int, DroneMode] = {i: DroneMode.IDLE for i in range(num_drones)}
@@ -83,6 +85,8 @@ class SwarmWorld:
         self.position_controllers: Dict[int, PositionController] = {
             i: PositionController() for i in range(num_drones)
         }
+        self.hivemind_controller = HivemindController(self.num_drones, self.initial_xyzs)
+        self.hivemind_mode_active = False
 
         # Battery simulation
         self.batteries: Dict[int, float] = {i: 100.0 for i in range(num_drones)}
@@ -169,10 +173,14 @@ class SwarmWorld:
 
         else:
             print("[SwarmWorld] Running in headless mode (no visualization)")
+        
+        return initial_xyzs
 
     def enqueue_command(self, command: DroneCommand):
         """Thread-safe command queuing."""
+        print(f"[QUEUE] Command added to queue: {command.cmd_type}")
         self.command_queue.put(command)
+        print(f"[QUEUE] Queue size now: {self.command_queue.qsize()}")
 
     def step(self) -> bool:
         """
@@ -181,6 +189,10 @@ class SwarmWorld:
         Returns:
             True if simulation should continue, False to stop
         """
+        print(f"[SIMLOOP] step() called. Queue has {self.command_queue.qsize()} commands")
+        if not self.command_queue.empty():
+            print(f"[SIMLOOP] Processing commands from queue")
+
         # Handle rendering and mouse input
         if self.custom_renderer is not None:
             # Custom renderer handles both rendering and mouse input
@@ -232,6 +244,12 @@ class SwarmWorld:
         self.sim_time += self.physics_dt
         self.step_count += 1
 
+        # Log drone positions after physics step
+        if self.step_count % self.control_hz == 0:  # Log at control frequency
+            for i in range(self.num_drones):
+                pos = self._get_position(i)
+                print(f"[STATE] Drone {i} position: {pos}")
+
         # Update battery levels
         if self.step_count % self.physics_hz == 0:  # Once per second
             self._update_batteries()
@@ -249,6 +267,18 @@ class SwarmWorld:
                 self._execute_command(cmd)
             except Empty:
                 break
+
+    def set_hivemind_mode(self, active: bool):
+        """Enable or disable hivemind mode."""
+        self.hivemind_mode_active = active
+        if active:
+            for i in range(self.num_drones):
+                self.drone_modes[i] = DroneMode.HIVE_MIND
+            print("[SwarmWorld] Hivemind mode ACTIVATED")
+        else:
+            for i in range(self.num_drones):
+                self.drone_modes[i] = DroneMode.HOVER
+            print("[SwarmWorld] Hivemind mode DEACTIVATED")
 
     def _execute_command(self, cmd: DroneCommand):
         """Execute a single command."""
@@ -293,8 +323,21 @@ class SwarmWorld:
         elif cmd.cmd_type == "spawn":
             self._respawn(cmd.params.get("num", 5))
 
+        elif cmd.cmd_type == "enable_hivemind":
+            self.set_hivemind_mode(True)
+
+        elif cmd.cmd_type == "disable_hivemind":
+            self.set_hivemind_mode(False)
+
+        elif cmd.cmd_type == "move_hivemind":
+            position = np.array(cmd.params.get("position"))
+            yaw = cmd.params.get("yaw", 0.0)
+            scale = cmd.params.get("scale", 1.0)
+            self.hivemind_controller.set_target(position, yaw, scale)
+
     def _takeoff_drone(self, drone_id: int, altitude: float):
         """Command drone to take off to target altitude."""
+        print(f"[HANDLER] Executing takeoff for drone: {drone_id}")
         current_pos = self._get_position(drone_id)
         target_pos = current_pos.copy()
         target_pos[2] = altitude
@@ -303,6 +346,7 @@ class SwarmWorld:
         self.target_yaws[drone_id] = 0.0
         self.drone_modes[drone_id] = DroneMode.TAKEOFF
         print(f"[SwarmWorld] Drone {drone_id} taking off to altitude {altitude}m")
+        print(f"[HANDLER] Takeoff execution complete for drone: {drone_id}")
 
     def _land_drone(self, drone_id: int):
         """Command drone to land."""
@@ -374,10 +418,15 @@ class SwarmWorld:
 
     def _control_update(self):
         """Update control commands for all drones."""
+        if self.hivemind_mode_active:
+            drone_target_positions = self.hivemind_controller.update()
+            for i in range(self.num_drones):
+                self.target_positions[i] = drone_target_positions[i]
+
         for drone_id in range(self.num_drones):
             mode = self.drone_modes[drone_id]
 
-            if mode in [DroneMode.TAKEOFF, DroneMode.LANDING, DroneMode.GOTO, DroneMode.HOVER]:
+            if mode in [DroneMode.TAKEOFF, DroneMode.LANDING, DroneMode.GOTO, DroneMode.HOVER, DroneMode.HIVE_MIND]:
                 # Position control mode
                 if drone_id in self.target_positions:
                     current_pos = self._get_position(drone_id)
@@ -443,6 +492,7 @@ class SwarmWorld:
                     else:
                         # Hovering or very small movement
                         actions[drone_id] = [0, 0, 0, 0]
+                    print(f"[PHYSICS] Drone {drone_id} action computed: {actions[drone_id]}")
                 else:
                     actions[drone_id] = [0, 0, 0, 0]
 
@@ -456,6 +506,7 @@ class SwarmWorld:
                     actions[drone_id] = [direction[0], direction[1], direction[2], speed_frac]
                 else:
                     actions[drone_id] = [0, 0, 0, 0]
+                print(f"[PHYSICS] Drone {drone_id} action computed: {actions[drone_id]}")
 
             else:  # IDLE
                 actions[drone_id] = [0, 0, 0, 0]

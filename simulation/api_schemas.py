@@ -185,3 +185,10 @@ class ClickCoordsResponse(BaseModel):
     has_click: bool = Field(description="Whether a click has been registered")
     coords: List[float] = Field(default_factory=list, description="[x, y, z] coordinates if clicked")
     message: str
+
+
+class HivemindMoveRequest(BaseModel):
+    """Request to move the hivemind."""
+    position: List[float] = Field(default=[0.0, 0.0, 1.0], min_length=3, max_length=3, description="Target center of the swarm")
+    yaw: float = Field(default=0.0, description="Target yaw of the swarm")
+    scale: float = Field(default=1.0, ge=0.1, le=5.0, description="Target scale of the swarm")
