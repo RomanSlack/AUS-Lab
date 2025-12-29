@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useSimulationStore } from '../store/simulationStore';
 
 interface ResponseState {
   type: 'thinking' | 'success' | 'error';
@@ -14,7 +15,8 @@ export function ChatPill() {
   const [response, setResponse] = useState<ResponseState | null>(null);
   const [isFading, setIsFading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const fadeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const fadeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { selectedDroneId } = useSimulationStore();
 
   // Clear any existing fade timeout
   const clearFadeTimeout = () => {
@@ -33,8 +35,8 @@ export function ChatPill() {
         setTimeout(() => {
           setResponse(null);
           setIsFading(false);
-        }, 300);
-      }, 4000);
+        }, 200);
+      }, 3500);
     }
 
     return () => clearFadeTimeout();
@@ -43,7 +45,19 @@ export function ChatPill() {
   const sendCommand = async () => {
     if (!input.trim() || isLoading) return;
 
-    const command = input.trim();
+    let command = input.trim();
+
+    // If a drone is selected, prepend context to help the AI
+    if (selectedDroneId !== null) {
+      // Add drone context to command if it seems like it's about movement/control
+      const movementKeywords = ['fly', 'go', 'move', 'send', 'take', 'land', 'hover'];
+      const hasMovement = movementKeywords.some(k => command.toLowerCase().includes(k));
+
+      if (hasMovement && !command.toLowerCase().includes('drone')) {
+        command = `For drone ${selectedDroneId}: ${command}`;
+      }
+    }
+
     setInput('');
     setIsLoading(true);
     setIsFading(false);
@@ -101,6 +115,12 @@ export function ChatPill() {
 
   return (
     <div className="command-input-container">
+      {selectedDroneId !== null && (
+        <div className="selected-drone-indicator">
+          Targeting Drone {selectedDroneId}
+        </div>
+      )}
+
       {response && (
         <div className={`command-response-pill ${isFading ? 'fading' : ''}`}>
           {response.type === 'thinking' ? (
@@ -135,7 +155,11 @@ export function ChatPill() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Enter drone command..."
+          placeholder={
+            selectedDroneId !== null
+              ? `Command drone ${selectedDroneId}...`
+              : 'Enter drone command...'
+          }
           disabled={isLoading}
         />
         <button onClick={sendCommand} disabled={isLoading || !input.trim()}>

@@ -1,9 +1,9 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useSimulationStore } from '../store/simulationStore';
 import type { FormationPattern } from '../types/simulation';
 
 export function useCommands() {
-  const { ws } = useSimulationStore();
+  const ws = useSimulationStore(state => state.ws);
 
   const sendCommand = useCallback(
     (action: string, params: Record<string, unknown>) => {
@@ -23,42 +23,86 @@ export function useCommands() {
     [ws]
   );
 
-  return {
-    takeoff: (ids: number[] | ['all'] = ['all'], altitude: number = 1.5) =>
+  const takeoff = useCallback(
+    (ids: number[] | ['all'] = ['all'], altitude: number = 1.5) =>
       sendCommand('takeoff', { ids, altitude }),
+    [sendCommand]
+  );
 
-    land: (ids: number[] | ['all'] = ['all']) =>
+  const land = useCallback(
+    (ids: number[] | ['all'] = ['all']) =>
       sendCommand('land', { ids }),
+    [sendCommand]
+  );
 
-    hover: (ids: number[] | ['all'] = ['all']) =>
+  const hover = useCallback(
+    (ids: number[] | ['all'] = ['all']) =>
       sendCommand('hover', { ids }),
+    [sendCommand]
+  );
 
-    goto: (id: number, x: number, y: number, z: number, yaw: number = 0) =>
+  const goto = useCallback(
+    (id: number, x: number, y: number, z: number, yaw: number = 0) =>
       sendCommand('goto', { id, x, y, z, yaw }),
+    [sendCommand]
+  );
 
-    velocity: (id: number, vx: number, vy: number, vz: number, yaw_rate: number = 0) =>
+  const velocity = useCallback(
+    (id: number, vx: number, vy: number, vz: number, yaw_rate: number = 0) =>
       sendCommand('velocity', { id, vx, vy, vz, yaw_rate }),
+    [sendCommand]
+  );
 
-    formation: (
+  const formation = useCallback(
+    (
       pattern: FormationPattern,
       center: [number, number, number] = [0, 0, 1.5],
       options: { spacing?: number; radius?: number; axis?: 'x' | 'y' } = {}
     ) =>
       sendCommand('formation', { pattern, center, ...options }),
+    [sendCommand]
+  );
 
-    spawn: (num: number = 5) =>
+  const spawn = useCallback(
+    (num: number = 5) =>
       sendCommand('spawn', { num }),
+    [sendCommand]
+  );
 
-    reset: () =>
-      sendCommand('reset', {}),
+  const reset = useCallback(
+    () => sendCommand('reset', {}),
+    [sendCommand]
+  );
 
-    setSpeed: (speed: number) =>
+  const setSpeed = useCallback(
+    (speed: number) =>
       sendCommand('speed', { speed }),
+    [sendCommand]
+  );
 
-    waypoint: (x: number, y: number, z: number) =>
+  const waypoint = useCallback(
+    (x: number, y: number, z: number) =>
       sendCommand('waypoint', { x, y, z }),
+    [sendCommand]
+  );
 
-    monitor: (x: number, y: number, z: number) =>
+  const monitor = useCallback(
+    (x: number, y: number, z: number) =>
       sendCommand('monitor', { x, y, z }),
-  };
+    [sendCommand]
+  );
+
+  return useMemo(() => ({
+    takeoff,
+    land,
+    hover,
+    goto,
+    velocity,
+    formation,
+    spawn,
+    reset,
+    setSpeed,
+    waypoint,
+    monitor,
+  }), [takeoff, land, hover, goto, velocity, formation, spawn, reset, setSpeed, waypoint, monitor]);
 }

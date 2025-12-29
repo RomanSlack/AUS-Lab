@@ -132,7 +132,6 @@ class SwarmWorldRust:
             vx, vy, vz = cmd.params["vx"], cmd.params["vy"], cmd.params["vz"]
             yaw_rate = cmd.params.get("yaw_rate", 0.0)
             self.swarm.velocity(drone_id, vx, vy, vz, yaw_rate)
-            print(f"[SwarmWorldRust] Drone {drone_id} velocity set")
 
         elif cmd.cmd_type == "formation":
             pattern = cmd.params["pattern"]

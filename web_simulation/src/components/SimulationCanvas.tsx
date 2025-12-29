@@ -3,6 +3,7 @@ import { Canvas, ThreeEvent } from '@react-three/fiber';
 import { OrbitControls, Grid, Environment, Stats } from '@react-three/drei';
 import * as THREE from 'three';
 import { DroneSwarm } from './DroneSwarm';
+import { DroneFPVCamera } from './DroneFPVCamera';
 import { useSimulationStore } from '../store/simulationStore';
 import { useCommands } from '../hooks/useCommands';
 
@@ -131,6 +132,9 @@ function Scene() {
 
       {/* Drones */}
       <DroneSwarm drones={drones} />
+
+      {/* FPV Camera for selected drone */}
+      <DroneFPVCamera />
 
       {/* Camera controls */}
       <OrbitControls

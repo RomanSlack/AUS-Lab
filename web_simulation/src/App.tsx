@@ -1,9 +1,12 @@
 import { SimulationCanvas } from './components/SimulationCanvas';
 import { ControlPanel } from './components/ControlPanel';
-import { StateDisplay } from './components/StateDisplay';
 import { ModelTest } from './components/ModelTest';
 import { ChatPill } from './components/ChatPill';
+import { DroneHUD } from './components/DroneHUD';
+import { DroneCameraView } from './components/DroneCameraView';
+import { ControlsOverlay } from './components/ControlsOverlay';
 import { useWebSocket } from './hooks/useWebSocket';
+import { useKeyboardControls } from './hooks/useKeyboardControls';
 import './App.css';
 
 function App() {
@@ -19,21 +22,26 @@ function App() {
   // Initialize WebSocket connection
   useWebSocket();
 
+  // Initialize keyboard controls
+  useKeyboardControls();
+
   return (
     <div className="app">
       <div className="canvas-container">
         <SimulationCanvas />
+        <DroneHUD />
+        <DroneCameraView />
+        <ControlsOverlay />
         <ChatPill />
       </div>
 
       <aside className="sidebar">
         <div className="sidebar-header">
           <h1>AUS-Lab</h1>
-          <span>Drone Simulation</span>
+          <span>Autonomous Systems</span>
         </div>
 
         <ControlPanel />
-        <StateDisplay />
 
         <div className="sidebar-footer">
           <a href="http://localhost:8000/docs" target="_blank" rel="noopener noreferrer">

@@ -4,6 +4,7 @@ import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { DroneState } from '../types/simulation';
+import { useSimulationStore } from '../store/simulationStore';
 
 interface DroneSwarmProps {
   drones: DroneState[];
@@ -15,7 +16,10 @@ const MODEL_SCALE = 10;
 
 export function DroneSwarm({ drones, maxCount = 5000 }: DroneSwarmProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
+  const selectedMeshRef = useRef<THREE.Mesh>(null);
+  const outlineMeshRef = useRef<THREE.Mesh>(null);
   const [modelGeometry, setModelGeometry] = useState<THREE.BufferGeometry | null>(null);
+  const { selectedDroneId } = useSimulationStore();
 
   // Load the GLB model
   const { scene } = useGLTF('/models/drone.glb');
@@ -74,9 +78,34 @@ export function DroneSwarm({ drones, maxCount = 5000 }: DroneSwarmProps) {
   const material = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        color: '#888888',
-        metalness: 0.4,
-        roughness: 0.5,
+        color: '#666666',
+        metalness: 0.5,
+        roughness: 0.4,
+      }),
+    []
+  );
+
+  // Selected drone highlight material - yellow emissive
+  const selectedMaterial = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: '#f5c518',
+        emissive: '#f5c518',
+        emissiveIntensity: 0.3,
+        metalness: 0.6,
+        roughness: 0.3,
+      }),
+    []
+  );
+
+  // Outline material - wireframe
+  const outlineMaterial = useMemo(
+    () =>
+      new THREE.MeshBasicMaterial({
+        color: '#f5c518',
+        wireframe: true,
+        transparent: true,
+        opacity: 0.6,
       }),
     []
   );
@@ -84,6 +113,10 @@ export function DroneSwarm({ drones, maxCount = 5000 }: DroneSwarmProps) {
   useFrame(() => {
     if (!meshRef.current) return;
     if (drones.length === 0) return;
+
+    const selectedDrone = selectedDroneId !== null
+      ? drones.find(d => d.id === selectedDroneId)
+      : null;
 
     drones.forEach((drone, i) => {
       // Convert PyBullet coordinates to Three.js
@@ -101,8 +134,12 @@ export function DroneSwarm({ drones, maxCount = 5000 }: DroneSwarmProps) {
       temp.updateMatrix();
       meshRef.current!.setMatrixAt(i, temp.matrix);
 
-      // Keep grey color (white tint = no change to base material)
-      tempColor.setRGB(1, 1, 1);
+      // Dim selected drone in instanced mesh (it will be rendered separately)
+      if (drone.id === selectedDroneId) {
+        tempColor.setRGB(0.2, 0.2, 0.2); // Dim it
+      } else {
+        tempColor.setRGB(1, 1, 1); // Normal
+      }
       meshRef.current!.setColorAt(i, tempColor);
     });
 
@@ -111,20 +148,60 @@ export function DroneSwarm({ drones, maxCount = 5000 }: DroneSwarmProps) {
       meshRef.current.instanceColor.needsUpdate = true;
     }
     meshRef.current.count = drones.length;
+
+    // Update selected drone mesh position
+    if (selectedMeshRef.current && outlineMeshRef.current && selectedDrone) {
+      selectedMeshRef.current.position.set(
+        selectedDrone.pos[0],
+        selectedDrone.pos[2],
+        -selectedDrone.pos[1]
+      );
+      selectedMeshRef.current.rotation.set(0, -selectedDrone.yaw, 0);
+      selectedMeshRef.current.visible = true;
+
+      // Outline slightly larger
+      outlineMeshRef.current.position.copy(selectedMeshRef.current.position);
+      outlineMeshRef.current.rotation.copy(selectedMeshRef.current.rotation);
+      outlineMeshRef.current.scale.setScalar(1.15);
+      outlineMeshRef.current.visible = true;
+    } else if (selectedMeshRef.current && outlineMeshRef.current) {
+      selectedMeshRef.current.visible = false;
+      outlineMeshRef.current.visible = false;
+    }
   });
 
   // Key to force re-create when geometry changes
   const geoKey = modelGeometry ? 'model' : 'fallback';
 
   return (
-    <instancedMesh
-      key={geoKey}
-      ref={meshRef}
-      args={[geometry, material, maxCount]}
-      frustumCulled={false}
-      castShadow
-      receiveShadow
-    />
+    <>
+      {/* Main instanced mesh for all drones */}
+      <instancedMesh
+        key={geoKey}
+        ref={meshRef}
+        args={[geometry, material, maxCount]}
+        frustumCulled={false}
+        castShadow
+        receiveShadow
+      />
+
+      {/* Selected drone highlight mesh */}
+      <mesh
+        ref={selectedMeshRef}
+        geometry={geometry}
+        material={selectedMaterial}
+        visible={false}
+        castShadow
+      />
+
+      {/* Selected drone outline mesh */}
+      <mesh
+        ref={outlineMeshRef}
+        geometry={geometry}
+        material={outlineMaterial}
+        visible={false}
+      />
+    </>
   );
 }
 

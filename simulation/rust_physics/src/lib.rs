@@ -132,6 +132,8 @@ impl Drone {
             DroneMode::Velocity => {
                 // Direct velocity control
                 self.apply_velocity_control(self.target_vel, dt);
+                // Apply yaw rate directly (don't use PID yaw control)
+                self.yaw += self.yaw_rate * dt;
             }
 
             DroneMode::Monitor => {
@@ -160,12 +162,14 @@ impl Drone {
             }
         }
 
-        // Update yaw
-        let yaw_error = self.target_yaw - self.yaw;
-        // Normalize to [-PI, PI]
-        let yaw_error = yaw_error.sin().atan2(yaw_error.cos());
-        self.yaw_rate = (2.0 * yaw_error).clamp(-PI, PI);
-        self.yaw += self.yaw_rate * dt;
+        // Update yaw (skip for Velocity mode - it handles yaw directly)
+        if self.mode != DroneMode::Velocity {
+            let yaw_error = self.target_yaw - self.yaw;
+            // Normalize to [-PI, PI]
+            let yaw_error = yaw_error.sin().atan2(yaw_error.cos());
+            self.yaw_rate = (2.0 * yaw_error).clamp(-PI, PI);
+            self.yaw += self.yaw_rate * dt;
+        }
 
         // Clamp position to world bounds
         self.pos[0] = self.pos[0].clamp(-10.0, 10.0);
