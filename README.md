@@ -10,6 +10,10 @@ Research platform investigating the connection between Swarm Structures, Hardwar
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?logo=typescript&logoColor=white)
 ![Google Gemini](https://img.shields.io/badge/Gemini-API-4285F4?logo=google&logoColor=white)
 
+<p align="center">
+  <img src="images/drone_gif_aus.gif" alt="AUS-Lab Drone Swarm Simulation" width="480">
+</p>
+
 ## Overview
 
 AUS-Lab provides a complete ecosystem for UAV swarm simulation with LLM-driven autonomous control. The platform features a high-performance Rust physics engine, a React/Three.js web visualization frontend, and an agentic system that translates natural language commands into structured drone operations.
