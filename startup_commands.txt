@@ -1,0 +1,14 @@
+cd simulation
+python main.py --num 24 --web
+
+Terminal 2 - Web Frontend
+cd web_simulation
+npm run dev
+
+Terminal 3 - Agentic Controller
+cd agentic
+python main.py
+
+Or single command:
+cd agentic
+python main.py -c "Take off to 2 meters and form a circle"

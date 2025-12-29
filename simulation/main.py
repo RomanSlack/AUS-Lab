@@ -28,8 +28,16 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import json
 
-from swarm import SwarmWorld, DroneCommand
-from swarm_rust import SwarmWorldRust
+# Rust physics engine (always available)
+from swarm_rust import SwarmWorldRust, DroneCommand
+
+# PyBullet physics engine (optional - for local GUI mode)
+try:
+    from swarm import SwarmWorld
+    PYBULLET_AVAILABLE = True
+except ImportError:
+    PYBULLET_AVAILABLE = False
+    SwarmWorld = None
 from api_schemas import (
     SpawnRequest, TakeoffRequest, LandRequest, HoverRequest,
     GotoRequest, VelocityRequest, FormationRequest,
@@ -757,6 +765,10 @@ def main():
         )
     else:
         # Use PyBullet for local GUI mode (has visualization)
+        if not PYBULLET_AVAILABLE:
+            print("[Main] ERROR: PyBullet not available. Use --web flag for Rust physics.")
+            print("[Main] To install PyBullet: pip install pybullet gym-pybullet-drones")
+            sys.exit(1)
         swarm = SwarmWorld(
             num_drones=args.num,
             gui=not args.headless,
