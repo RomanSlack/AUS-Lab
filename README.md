@@ -105,7 +105,16 @@ Options:
 - `--web` - Use Rust physics engine with WebSocket streaming (recommended)
 - `--port PORT` - API port (default: 8000)
 
-### Terminal 2: Start Web Frontend
+### Terminal 2: Start Agentic API Server
+
+```bash
+cd agentic
+uvicorn server:app --port 8001 --reload
+```
+
+This enables the chat interface in the web frontend.
+
+### Terminal 3: Start Web Frontend
 
 ```bash
 cd web_simulation
@@ -114,7 +123,9 @@ npm run dev
 
 Access the visualization at `http://localhost:5173`
 
-### Terminal 3: Run Agentic Controller
+The floating chat pill at the bottom connects to the agentic API for natural language drone control.
+
+### Alternative: CLI Agentic Controller
 
 Interactive mode:
 ```bash

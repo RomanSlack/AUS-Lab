@@ -2,6 +2,7 @@ import { SimulationCanvas } from './components/SimulationCanvas';
 import { ControlPanel } from './components/ControlPanel';
 import { StateDisplay } from './components/StateDisplay';
 import { ModelTest } from './components/ModelTest';
+import { ChatPill } from './components/ChatPill';
 import { useWebSocket } from './hooks/useWebSocket';
 import './App.css';
 
@@ -22,6 +23,7 @@ function App() {
     <div className="app">
       <div className="canvas-container">
         <SimulationCanvas />
+        <ChatPill />
       </div>
 
       <aside className="sidebar">

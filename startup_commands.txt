@@ -12,3 +12,5 @@ python main.py
 Or single command:
 cd agentic
 python main.py -c "Take off to 2 meters and form a circle"
+
+uvicorn server:app --port 8001 --reload
