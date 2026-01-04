@@ -1,16 +1,29 @@
 import { useSimulationStore } from '../store/simulationStore';
+import { snapCameraToPosition } from './SimulationCanvas';
 
 export function StateDisplay() {
   const { drones, timestamp, selectedDroneId, setSelectedDroneId } = useSimulationStore();
 
   const selectedDrone = selectedDroneId !== null ? drones.find((d) => d.id === selectedDroneId) : null;
 
+  const handleDroneClick = (droneId: number) => {
+    setSelectedDroneId(droneId === selectedDroneId ? null : droneId);
+  };
+
+  const handleDroneDoubleClick = (drone: typeof drones[0]) => {
+    // Snap camera to drone position
+    snapCameraToPosition(drone.pos[0], drone.pos[1], drone.pos[2]);
+    setSelectedDroneId(drone.id);
+  };
+
   return (
     <div className="state-display">
       <h2>Drone States</h2>
-
       <div className="timestamp">
         Time: {timestamp.toFixed(2)}s
+      </div>
+      <div className="drone-list-hint" style={{ fontSize: '10px', color: '#888', marginBottom: '4px' }}>
+        Double-click to focus camera
       </div>
 
       <div className="drone-list">
@@ -20,7 +33,9 @@ export function StateDisplay() {
             className={`drone-item ${selectedDroneId === drone.id ? 'selected' : ''} ${
               drone.healthy ? 'healthy' : 'unhealthy'
             }`}
-            onClick={() => setSelectedDroneId(drone.id === selectedDroneId ? null : drone.id)}
+            onClick={() => handleDroneClick(drone.id)}
+            onDoubleClick={() => handleDroneDoubleClick(drone)}
+            style={{ cursor: 'pointer' }}
           >
             <span className="drone-id">#{drone.id}</span>
             <span className="drone-health">{drone.healthy ? '●' : '○'}</span>

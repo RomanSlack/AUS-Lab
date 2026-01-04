@@ -1,5 +1,6 @@
-import { useMemo, useRef, useEffect } from 'react';
+import { useMemo, useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
+import { useThree } from '@react-three/fiber';
 import { useSimulationStore } from '../store/simulationStore';
 import type { TerrainMeshData, TerrainTextureData } from '../types/simulation';
 
@@ -36,6 +37,14 @@ function createTerrainGeometry(meshData: TerrainMeshData): THREE.BufferGeometry 
   const uvs = decodeBase64ToFloat32(meshData.uvs);
   const indices = decodeBase64ToUint32(meshData.indices);
 
+  console.log('[TerrainMesh] Geometry stats:', {
+    vertexCount: positions.length / 3,
+    indexCount: indices.length,
+    positionSample: [positions[0], positions[1], positions[2]],
+    boundsMin: meshData.boundsMin,
+    boundsMax: meshData.boundsMax,
+  });
+
   // Set attributes
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
@@ -44,32 +53,55 @@ function createTerrainGeometry(meshData: TerrainMeshData): THREE.BufferGeometry 
 
   // Compute bounding sphere for frustum culling
   geometry.computeBoundingSphere();
+  geometry.computeBoundingBox();
+
+  console.log('[TerrainMesh] Bounding box:', geometry.boundingBox);
 
   return geometry;
 }
 
 /**
  * Create Three.js texture from base64 JPEG data
+ * Returns a promise that resolves when texture is fully loaded
  */
-function createTerrainTexture(textureData: TerrainTextureData): THREE.Texture {
-  const texture = new THREE.Texture();
+function createTerrainTexture(textureData: TerrainTextureData): Promise<THREE.Texture> {
+  return new Promise((resolve, reject) => {
+    console.log('[TerrainMesh] Creating texture, data length:', textureData.data.length);
+    console.log('[TerrainMesh] Data preview:', textureData.data.substring(0, 50) + '...');
 
-  // Create image from base64 data
-  const img = new Image();
-  img.onload = () => {
-    texture.image = img;
-    texture.needsUpdate = true;
-  };
-  img.src = `data:image/jpeg;base64,${textureData.data}`;
+    const texture = new THREE.Texture();
 
-  // Configure texture
-  texture.wrapS = THREE.ClampToEdgeWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.colorSpace = THREE.SRGBColorSpace;
+    // Configure texture settings first
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.generateMipmaps = true;
 
-  return texture;
+    // Create image from base64 data
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      texture.image = img;
+      texture.needsUpdate = true;
+      console.log('[TerrainMesh] Texture image loaded:', {
+        width: img.width,
+        height: img.height,
+        naturalWidth: img.naturalWidth,
+        naturalHeight: img.naturalHeight,
+      });
+      resolve(texture);
+    };
+    img.onerror = (err) => {
+      console.error('[TerrainMesh] Failed to load texture image:', err);
+      reject(err);
+    };
+
+    const dataUrl = `data:image/jpeg;base64,${textureData.data}`;
+    console.log('[TerrainMesh] Setting image src, URL length:', dataUrl.length);
+    img.src = dataUrl;
+  });
 }
 
 interface TerrainMeshProps {
@@ -87,29 +119,47 @@ export function TerrainMesh({ yOffset = 0 }: TerrainMeshProps) {
   const terrain = useSimulationStore((state) => state.terrain);
   const meshRef = useRef<THREE.Mesh>(null);
   const textureRef = useRef<THREE.Texture | null>(null);
+  const [textureLoaded, setTextureLoaded] = useState<THREE.Texture | null>(null);
+  const { invalidate } = useThree();
 
   // Create geometry from terrain data
   const geometry = useMemo(() => {
     if (!terrain) return null;
-    return createTerrainGeometry(terrain.mesh);
+    const geo = createTerrainGeometry(terrain.mesh);
+    console.log('[TerrainMesh] Created geometry, bounding box:', geo.boundingBox);
+    return geo;
   }, [terrain]);
 
-  // Create texture from satellite imagery
-  const texture = useMemo(() => {
-    if (!terrain) return null;
-    const tex = createTerrainTexture(terrain.texture);
-    textureRef.current = tex;
-    return tex;
-  }, [terrain]);
-
-  // Cleanup texture on unmount
+  // Load texture asynchronously
   useEffect(() => {
+    if (!terrain) {
+      setTextureLoaded(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    createTerrainTexture(terrain.texture)
+      .then((tex) => {
+        if (!cancelled) {
+          textureRef.current = tex;
+          setTextureLoaded(tex);
+          invalidate(); // Force Three.js to re-render
+          console.log('[TerrainMesh] Texture ready, forcing re-render');
+        }
+      })
+      .catch((err) => {
+        console.error('[TerrainMesh] Texture load error:', err);
+      });
+
     return () => {
+      cancelled = true;
       if (textureRef.current) {
         textureRef.current.dispose();
+        textureRef.current = null;
       }
     };
-  }, []);
+  }, [terrain, invalidate]);
 
   // Cleanup geometry on unmount or when terrain changes
   useEffect(() => {
@@ -120,9 +170,30 @@ export function TerrainMesh({ yOffset = 0 }: TerrainMeshProps) {
     };
   }, [geometry]);
 
-  if (!terrain || !geometry || !texture) {
+  // Log terrain info for debugging
+  useEffect(() => {
+    if (terrain) {
+      console.log('[TerrainMesh] Terrain data:', {
+        meshBounds: {
+          min: terrain.mesh.boundsMin,
+          max: terrain.mesh.boundsMax,
+        },
+        elevation: {
+          min: terrain.mesh.minElevation,
+          max: terrain.mesh.maxElevation,
+        },
+        scale: terrain.coordinateMapping.metersPerUnit,
+        textureSize: `${terrain.texture.width}x${terrain.texture.height}`,
+      });
+    }
+  }, [terrain]);
+
+  if (!terrain || !geometry) {
     return null;
   }
+
+  // Show placeholder while texture loads
+  const showPlaceholder = !textureLoaded;
 
   // The mesh is already centered at origin from the backend
   // Y (up) contains elevation, X and Z are horizontal
@@ -136,12 +207,22 @@ export function TerrainMesh({ yOffset = 0 }: TerrainMeshProps) {
       receiveShadow
       castShadow
     >
-      <meshStandardMaterial
-        map={texture}
-        side={THREE.FrontSide}
-        roughness={0.9}
-        metalness={0.0}
-      />
+      {showPlaceholder ? (
+        // Placeholder material while texture loads
+        <meshStandardMaterial
+          color="#4a7c59"
+          roughness={0.9}
+          metalness={0.0}
+          side={THREE.DoubleSide}
+        />
+      ) : (
+        <meshStandardMaterial
+          map={textureLoaded}
+          side={THREE.DoubleSide}
+          roughness={0.9}
+          metalness={0.0}
+        />
+      )}
     </mesh>
   );
 }

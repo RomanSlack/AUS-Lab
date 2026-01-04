@@ -82,9 +82,11 @@ class TerrainConfig:
 
     def get_dem_tile_url(self, z: int, x: int, y: int) -> str:
         """Get URL for a terrain-rgb DEM tile."""
+        # Note: Don't use @2x for terrain-rgb - it's a data tile, not visual
+        # The pngraw format gives us raw PNG without any re-encoding
         return (
             f"https://api.mapbox.com/v4/mapbox.terrain-rgb/"
-            f"{z}/{x}/{y}@2x.pngraw?access_token={self.mapbox_access_token}"
+            f"{z}/{x}/{y}.pngraw?access_token={self.mapbox_access_token}"
         )
 
     def get_satellite_tile_url(self, z: int, x: int, y: int) -> str:

@@ -114,11 +114,12 @@ export interface TerrainPreset {
 }
 
 export const TERRAIN_PRESETS: TerrainPreset[] = [
-  { name: 'Lake Tahoe', lat: 39.0968, lng: -120.0324, sizeMeters: 2000, description: 'Sierra Nevada mountains' },
-  { name: 'Grand Canyon', lat: 36.1069, lng: -112.1129, sizeMeters: 5000, description: 'Iconic desert canyon' },
-  { name: 'Mt Rainier', lat: 46.8523, lng: -121.7603, sizeMeters: 3000, description: 'Volcanic peak, Washington' },
-  { name: 'Yosemite Valley', lat: 37.7456, lng: -119.5936, sizeMeters: 3000, description: 'Granite cliffs and waterfalls' },
-  { name: 'Swiss Alps', lat: 45.9763, lng: 7.6586, sizeMeters: 4000, description: 'Matterhorn region' },
-  { name: 'Hawaii Volcanoes', lat: 19.4069, lng: -155.2834, sizeMeters: 3000, description: 'Big Island volcanic terrain' },
-  { name: 'Flat Test', lat: 37.7749, lng: -122.4194, sizeMeters: 1000, description: 'San Francisco (mostly flat)' },
+  { name: 'Emerald Bay (Tahoe)', lat: 38.9533, lng: -120.1100, sizeMeters: 1000, description: 'Steep cliffs at Lake Tahoe' },
+  { name: 'Grand Canyon', lat: 36.0544, lng: -112.1401, sizeMeters: 1000, description: 'South Rim viewpoint' },
+  { name: 'Mt Rainier', lat: 46.8523, lng: -121.7603, sizeMeters: 1000, description: 'Volcanic peak, Washington' },
+  { name: 'Yosemite Valley', lat: 37.7456, lng: -119.5936, sizeMeters: 1000, description: 'Granite cliffs and waterfalls' },
+  { name: 'Matterhorn', lat: 45.9763, lng: 7.6586, sizeMeters: 1000, description: 'Iconic Swiss Alps peak' },
+  { name: 'Kilauea Crater', lat: 19.4069, lng: -155.2834, sizeMeters: 1000, description: 'Active Hawaiian volcano' },
+  { name: 'Half Dome', lat: 37.7459, lng: -119.5332, sizeMeters: 1000, description: 'Yosemite granite dome' },
+  { name: 'Zion Canyon', lat: 37.2982, lng: -112.9487, sizeMeters: 1000, description: 'Red rock canyon, Utah' },
 ];

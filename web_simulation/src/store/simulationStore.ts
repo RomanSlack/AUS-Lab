@@ -59,6 +59,12 @@ interface SimulationStore {
   setTerrainError: (error: string | null) => void;
   clearTerrain: () => void;
 
+  // Camera mode: 'orbit' or 'fly'
+  cameraMode: 'orbit' | 'fly';
+  setCameraMode: (mode: 'orbit' | 'fly') => void;
+  flySpeed: number;
+  setFlySpeed: (speed: number) => void;
+
   // Helper to get selected drone data
   getSelectedDrone: () => DroneState | null;
 }
@@ -121,6 +127,12 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
   setTerrainLoading: (loading) => set({ terrainLoading: loading }),
   setTerrainError: (error) => set({ terrainError: error, terrainLoading: false }),
   clearTerrain: () => set({ terrain: null, terrainError: null }),
+
+  // Camera mode
+  cameraMode: 'fly',  // Default to fly mode
+  setCameraMode: (mode) => set({ cameraMode: mode }),
+  flySpeed: 50,  // meters per second
+  setFlySpeed: (speed) => set({ flySpeed: speed }),
 
   // Get selected drone data
   getSelectedDrone: () => {

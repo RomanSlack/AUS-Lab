@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { SimulationCanvas } from './components/SimulationCanvas';
+import { SimulationCanvas, CameraModeToggle, FlyCameraHUD } from './components/SimulationCanvas';
 import { ControlPanel } from './components/ControlPanel';
 import { ModelTest } from './components/ModelTest';
 import { ChatPill } from './components/ChatPill';
@@ -40,6 +40,8 @@ function App() {
         <ControlsOverlay />
         <ChatPill />
         <TerrainInfo />
+        <FlyCameraHUD />
+        <CameraModeToggle />
 
         {/* Terrain button in top-left corner */}
         <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 100 }}>

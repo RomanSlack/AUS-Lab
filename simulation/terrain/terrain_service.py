@@ -164,9 +164,18 @@ class TerrainService:
             satellite_task
         )
 
+        # Debug: Log elevation statistics
+        print(f"[TerrainService] Elevation array shape: {elevation.shape}")
+        print(f"[TerrainService] Elevation range: {np.min(elevation):.1f}m to {np.max(elevation):.1f}m")
+        print(f"[TerrainService] Elevation variance: {np.var(elevation):.1f}")
+        print(f"[TerrainService] Satellite image shape: {satellite.shape}")
+        print(f"[TerrainService] Scale factor: {scale_factor}")
+
         # Calculate real dimensions from bounding box
         real_width = elev_bbox.width_meters
         real_height = elev_bbox.height_meters
+
+        print(f"[TerrainService] Real dimensions: {real_width:.0f}m x {real_height:.0f}m")
 
         # Generate mesh
         mesh = self._generator.generate(
@@ -175,6 +184,8 @@ class TerrainService:
             real_height_meters=real_height,
             center_offset=(0.0, 0.0)
         )
+
+        print(f"[TerrainService] Mesh bounds Y: {mesh.bounds_min[1]:.1f} to {mesh.bounds_max[1]:.1f}")
 
         # Encode satellite image as base64 JPEG (higher quality for high-res)
         jpeg_quality = 90 if target_resolution and target_resolution < 1.5 else 85

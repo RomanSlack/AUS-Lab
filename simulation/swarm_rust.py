@@ -224,6 +224,16 @@ class SwarmWorldRust:
         self.swarm.set_world_bounds(xy_bounds, z_min, z_max)
         print(f"[SwarmWorldRust] World bounds set to ±{xy_bounds}m XY, {z_min}-{z_max}m Z")
 
+    def set_spawn_altitude(self, altitude: float):
+        """
+        Set spawn altitude for drones (terrain surface level).
+
+        Args:
+            altitude: Z coordinate where drones spawn
+        """
+        self.swarm.set_spawn_altitude(altitude)
+        print(f"[SwarmWorldRust] Spawn altitude set to {altitude}m")
+
     def get_world_bounds(self):
         """Get current world bounds."""
         return self.swarm.get_world_bounds()

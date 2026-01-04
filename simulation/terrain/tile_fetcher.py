@@ -208,12 +208,21 @@ class TileFetcher:
             numpy array of shape (tile_size, tile_size) with elevation in meters
         """
         url = self.config.get_dem_tile_url(tile.z, tile.x, tile.y)
+        print(f"[TileFetcher] Fetching DEM tile z={tile.z} x={tile.x} y={tile.y}")
         data = await self._fetch_tile(url, '.png')
 
         img = Image.open(io.BytesIO(data))
         rgb_array = np.array(img)[:, :, :3]  # Ignore alpha if present
 
-        return decode_terrain_rgb_array(rgb_array)
+        # Debug: check RGB values
+        print(f"[TileFetcher] DEM tile shape: {rgb_array.shape}, dtype: {rgb_array.dtype}")
+        print(f"[TileFetcher] RGB sample (center pixel): R={rgb_array[128,128,0]}, G={rgb_array[128,128,1]}, B={rgb_array[128,128,2]}")
+        print(f"[TileFetcher] RGB range: R=[{rgb_array[:,:,0].min()}-{rgb_array[:,:,0].max()}], G=[{rgb_array[:,:,1].min()}-{rgb_array[:,:,1].max()}], B=[{rgb_array[:,:,2].min()}-{rgb_array[:,:,2].max()}]")
+
+        elevation = decode_terrain_rgb_array(rgb_array)
+        print(f"[TileFetcher] Decoded elevation range: {elevation.min():.1f}m to {elevation.max():.1f}m")
+
+        return elevation
 
     async def fetch_satellite_tile(self, tile: TileCoord) -> np.ndarray:
         """
@@ -335,7 +344,9 @@ class TileFetcher:
 
         # Calculate zoom
         zoom = math.log2(meters_per_pixel_at_equator / target_meters_per_pixel)
-        return int(max(1, min(zoom, 14)))
+        final_zoom = int(max(1, min(zoom, self.config.max_zoom)))
+        print(f"[TileFetcher] Zoom calculation: target={target_meters_per_pixel}m/px -> zoom={final_zoom} (raw={zoom:.1f})")
+        return final_zoom
 
     def _stitch_tiles(
         self,

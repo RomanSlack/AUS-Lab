@@ -236,6 +236,7 @@ pub struct RustSwarm {
     world_bounds_xy: f32,      // ±this value for X and Y
     world_bounds_z_min: f32,   // Minimum Z (ground)
     world_bounds_z_max: f32,   // Maximum Z (ceiling)
+    spawn_altitude: f32,       // Z altitude where drones spawn (terrain surface)
 }
 
 #[pymethods]
@@ -267,7 +268,13 @@ impl RustSwarm {
             world_bounds_xy: 10.0,      // Default ±10m
             world_bounds_z_min: 0.0,    // Ground level
             world_bounds_z_max: 5.0,    // 5m ceiling
+            spawn_altitude: 0.1,        // Default ground level
         }
+    }
+
+    /// Set spawn altitude for drones (terrain surface level)
+    pub fn set_spawn_altitude(&mut self, altitude: f32) {
+        self.spawn_altitude = altitude;
     }
 
     /// Set world bounds for terrain scaling
@@ -576,7 +583,7 @@ impl RustSwarm {
     /// Respawn with new drone count
     pub fn respawn(&mut self, num_drones: usize) {
         let grid_size = (num_drones as f32).sqrt().ceil() as usize;
-        let spacing = 0.5;
+        let spacing = 2.0;  // Wider spacing for realistic terrain
 
         self.drones.clear();
         for i in 0..num_drones {
@@ -584,7 +591,7 @@ impl RustSwarm {
             let col = i % grid_size;
             let x = (col as f32 - grid_size as f32 / 2.0) * spacing;
             let y = (row as f32 - grid_size as f32 / 2.0) * spacing;
-            let z = 0.1;
+            let z = self.spawn_altitude + 0.1;  // Use spawn altitude from terrain
             self.drones.push(Drone::new(i, x, y, z));
         }
 

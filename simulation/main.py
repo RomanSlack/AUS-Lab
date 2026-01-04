@@ -682,17 +682,31 @@ async def load_terrain(request: TerrainLoadRequest):
             target_resolution=target_resolution
         )
 
+        result_dict = result.to_dict()
+
         # Update physics bounds if using realistic scale
         if request.realistic_scale and swarm is not None:
             # Set world bounds to match terrain size
             half_size = request.size_meters / 2
-            # Z bounds based on terrain elevation range + headroom
-            z_min = 0.0  # Ground level (terrain handles actual elevation)
-            z_max = 500.0  # 500m ceiling for large terrain
-            swarm.set_world_bounds(half_size, z_min, z_max)
-            print(f"[Terrain] Set physics bounds to ±{half_size}m XY, {z_min}-{z_max}m Z")
 
-        result_dict = result.to_dict()
+            # Get terrain center elevation from mesh bounds
+            mesh_data = result_dict['mesh']
+            terrain_y_center = (mesh_data['boundsMin'][1] + mesh_data['boundsMax'][1]) / 2
+            terrain_height = mesh_data['boundsMax'][1] - mesh_data['boundsMin'][1]
+
+            # Z bounds based on terrain elevation range + headroom
+            z_min = 0.0  # Ground level in simulation
+            z_max = terrain_height + 500.0  # Terrain height + 500m ceiling
+            swarm.set_world_bounds(half_size, z_min, z_max)
+
+            # Set spawn altitude to terrain center elevation (drones spawn on terrain)
+            swarm.set_spawn_altitude(terrain_y_center)
+
+            # Respawn drones at the new altitude
+            swarm.enqueue_command(DroneCommand("spawn", "all", {"num": 5}))
+
+            print(f"[Terrain] Set physics bounds to ±{half_size}m XY, {z_min}-{z_max}m Z")
+            print(f"[Terrain] Spawn altitude: {terrain_y_center}m (terrain center)")
 
         return TerrainLoadResponse(
             success=True,
