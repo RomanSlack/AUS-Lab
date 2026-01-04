@@ -13,4 +13,5 @@ Or single command:
 cd agentic
 python main.py -c "Take off to 2 meters and form a circle"
 
+Run the API for the agentic
 uvicorn server:app --port 8001 --reload
