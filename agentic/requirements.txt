@@ -6,3 +6,8 @@ fastapi>=0.109.0
 uvicorn>=0.25.0
 pytest>=8.0.0
 pytest-mock>=3.12.0
+raftos>=0.2.0
+gossipy==0.1
+redis==3.5.3
+websockets>=10.0
+typer>=0.9.0

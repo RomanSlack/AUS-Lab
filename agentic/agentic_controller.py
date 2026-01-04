@@ -5,12 +5,18 @@ Integrates Gemini API with simulation through translation layer.
 
 import os
 import json
+import asyncio
+import threading
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
 import google.generativeai as genai
 
 from translation_schema import MissionPlan, ACTION_TEMPLATES, LLM_SYSTEM_PROMPT
 from api_translator import SimulationAPIClient, EnvironmentTranslator
+from raft_service import RaftService
+from redis_service import RedisService
 
 
 class AgenticSwarmController:
@@ -19,7 +25,7 @@ class AgenticSwarmController:
     Handles natural language → structured actions → API execution → feedback.
     """
 
-    def __init__(self, api_base_url: str = "http://localhost:8000", gemini_model: str = "models/gemini-flash-latest"):
+    def __init__(self, api_base_url: str = "http://localhost:8000", gemini_model: str = "models/gemini-flash-latest", node_id: str = "node1", self_address:str = "localhost:8001", partner_addrs: list = ["localhost:8002", "localhost:8003"], redis_host: str = "localhost", redis_port: int = 6379):
         """
         Initialize the agentic controller.
 
@@ -52,10 +58,38 @@ class AgenticSwarmController:
         print(f"[Controller] Using model: {gemini_model}")
         print(f"[Controller] API endpoint: {api_base_url}")
 
+        # Initialize and start Raft service
+        self.raft_service = RaftService(self_address, partner_addrs)
+        print(f"[Controller] Raft service started for node {node_id}")
+
+        # Initialize Redis service
+        self.redis_service = RedisService(host=redis_host, port=redis_port)
+        self.redis_thread = threading.Thread(target=self._subscribe_to_commands)
+        self.redis_thread.daemon = True
+        self.redis_thread.start()
+        print(f"[Controller] Redis service started and subscribed to commands channel")
+
+
         # Check API health
         if not self.api_client.health_check():
             print("[Controller] ⚠ Warning: Simulation API not responding")
             print("[Controller] Make sure simulation is running: python main.py")
+
+    def get_leader(self):
+        return self.raft_service.get_leader()
+
+    def is_leader(self):
+        return self.raft_service.is_leader()
+
+    def _subscribe_to_commands(self):
+        pubsub = self.redis_service.subscribe("commands")
+        for message in pubsub.listen():
+            if message['type'] == 'message':
+                mission_plan_dict = json.loads(message['data'])
+                mission_plan = MissionPlan(**mission_plan_dict)
+                print(f"[{self.node_id}] Received mission plan from Redis: {mission_plan.mission_name}")
+                self.api_client.execute_mission(mission_plan)
+
 
     def process_command(self, user_command: str, execute: bool = True) -> Dict[str, Any]:
         """
@@ -106,11 +140,20 @@ class AgenticSwarmController:
         # Step 4: Execute if requested
         execution_result = None
         if execute:
-            print("\n[Controller] Step 4: Executing mission...")
-            execution_result = self.api_client.execute_mission(
-                mission_plan,
-                feedback_callback=self._log_feedback
-            )
+            if self.is_leader():
+                print("\n[Controller] Step 4: Executing mission as leader...")
+                self.raft_service.set_value("mission", mission_plan.json())
+                # The leader also executes the mission
+                execution_result = self.api_client.execute_mission(
+                    mission_plan,
+                    feedback_callback=self._log_feedback
+                )
+            else:
+                print("\n[Controller] Step 4: Not the leader, forwarding to leader.")
+                # In a real application, you would forward the command to the leader.
+                # For now, we'll just publish to Redis and let the leader pick it up.
+                self.redis_service.publish("commands", mission_plan.json())
+
         else:
             print("\n[Controller] Step 4: Skipping execution (dry-run mode)")
 
