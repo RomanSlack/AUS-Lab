@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { DroneState } from '../types/simulation';
+import type { DroneState, TerrainLoadResponse } from '../types/simulation';
 
 export interface KeyboardState {
   w: boolean;
@@ -49,6 +49,15 @@ interface SimulationStore {
   // FPV camera texture data
   fpvTexture: Uint8Array | null;
   setFpvTexture: (texture: Uint8Array | null) => void;
+
+  // Terrain state
+  terrain: TerrainLoadResponse | null;
+  terrainLoading: boolean;
+  terrainError: string | null;
+  setTerrain: (terrain: TerrainLoadResponse | null) => void;
+  setTerrainLoading: (loading: boolean) => void;
+  setTerrainError: (error: string | null) => void;
+  clearTerrain: () => void;
 
   // Helper to get selected drone data
   getSelectedDrone: () => DroneState | null;
@@ -103,6 +112,15 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
   // FPV texture
   fpvTexture: null,
   setFpvTexture: (texture) => set({ fpvTexture: texture }),
+
+  // Terrain
+  terrain: null,
+  terrainLoading: false,
+  terrainError: null,
+  setTerrain: (terrain) => set({ terrain, terrainError: null }),
+  setTerrainLoading: (loading) => set({ terrainLoading: loading }),
+  setTerrainError: (error) => set({ terrainError: error, terrainLoading: false }),
+  clearTerrain: () => set({ terrain: null, terrainError: null }),
 
   // Get selected drone data
   getSelectedDrone: () => {

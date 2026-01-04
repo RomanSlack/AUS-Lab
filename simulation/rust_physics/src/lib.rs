@@ -102,7 +102,8 @@ impl Drone {
     }
 
     /// Update drone physics for one timestep
-    pub fn step(&mut self, dt: f32, max_vel: f32, monitor_center: Option<[f32; 3]>, monitor_orbit_speed: f32) {
+    pub fn step(&mut self, dt: f32, max_vel: f32, monitor_center: Option<[f32; 3]>, monitor_orbit_speed: f32,
+                bounds_xy: f32, bounds_z_min: f32, bounds_z_max: f32) {
         match self.mode {
             DroneMode::Idle => {
                 // Slow down to stop
@@ -172,15 +173,16 @@ impl Drone {
         }
 
         // Clamp position to world bounds
-        self.pos[0] = self.pos[0].clamp(-10.0, 10.0);
-        self.pos[1] = self.pos[1].clamp(-10.0, 10.0);
-        self.pos[2] = self.pos[2].clamp(0.0, 5.0);
+        self.pos[0] = self.pos[0].clamp(-bounds_xy, bounds_xy);
+        self.pos[1] = self.pos[1].clamp(-bounds_xy, bounds_xy);
+        self.pos[2] = self.pos[2].clamp(bounds_z_min, bounds_z_max);
 
         // Update health based on bounds and battery
-        self.healthy = self.pos[0].abs() < 15.0
-                    && self.pos[1].abs() < 15.0
-                    && self.pos[2] >= 0.0
-                    && self.pos[2] <= 10.0
+        let safety_margin = bounds_xy * 1.5;
+        self.healthy = self.pos[0].abs() < safety_margin
+                    && self.pos[1].abs() < safety_margin
+                    && self.pos[2] >= bounds_z_min - 1.0
+                    && self.pos[2] <= bounds_z_max + 10.0
                     && self.battery > 0.0;
     }
 
@@ -230,6 +232,10 @@ pub struct RustSwarm {
     speed_multiplier: f32,
     monitor_center: Option<[f32; 3]>,
     monitor_orbit_speed: f32,
+    // Configurable world bounds (for terrain scaling)
+    world_bounds_xy: f32,      // ±this value for X and Y
+    world_bounds_z_min: f32,   // Minimum Z (ground)
+    world_bounds_z_max: f32,   // Maximum Z (ceiling)
 }
 
 #[pymethods]
@@ -258,7 +264,30 @@ impl RustSwarm {
             speed_multiplier: 1.0,
             monitor_center: None,
             monitor_orbit_speed: 0.3,
+            world_bounds_xy: 10.0,      // Default ±10m
+            world_bounds_z_min: 0.0,    // Ground level
+            world_bounds_z_max: 5.0,    // 5m ceiling
         }
+    }
+
+    /// Set world bounds for terrain scaling
+    /// xy_bounds: ±this value for X and Y
+    /// z_min: minimum Z (ground level, can be negative for valleys)
+    /// z_max: maximum Z (ceiling)
+    #[pyo3(signature = (xy_bounds, z_min, z_max))]
+    pub fn set_world_bounds(&mut self, xy_bounds: f32, z_min: f32, z_max: f32) {
+        self.world_bounds_xy = xy_bounds;
+        self.world_bounds_z_min = z_min;
+        self.world_bounds_z_max = z_max;
+        // Also increase max velocity for larger worlds
+        // Base: 2 m/s for 10m world, scale up for larger
+        let scale_factor = (xy_bounds / 10.0).max(1.0);
+        self.max_velocity = 2.0 * scale_factor.sqrt();  // sqrt so it doesn't get too fast
+    }
+
+    /// Get current world bounds
+    pub fn get_world_bounds(&self) -> (f32, f32, f32) {
+        (self.world_bounds_xy, self.world_bounds_z_min, self.world_bounds_z_max)
     }
 
     /// Step physics for all drones (parallelized with rayon)
@@ -267,10 +296,14 @@ impl RustSwarm {
         let max_vel = self.max_velocity * self.speed_multiplier;
         let monitor_center = self.monitor_center;
         let monitor_orbit_speed = self.monitor_orbit_speed;
+        let bounds_xy = self.world_bounds_xy;
+        let bounds_z_min = self.world_bounds_z_min;
+        let bounds_z_max = self.world_bounds_z_max;
 
         // Parallel update of all drones
         self.drones.par_iter_mut().for_each(|drone| {
-            drone.step(dt, max_vel, monitor_center, monitor_orbit_speed);
+            drone.step(dt, max_vel, monitor_center, monitor_orbit_speed,
+                      bounds_xy, bounds_z_min, bounds_z_max);
         });
 
         self.sim_time += dt;
@@ -377,9 +410,9 @@ impl RustSwarm {
         if id < self.drones.len() {
             let drone = &mut self.drones[id];
             drone.target_pos = [
-                x.clamp(-10.0, 10.0),
-                y.clamp(-10.0, 10.0),
-                z.clamp(0.1, 5.0),
+                x.clamp(-self.world_bounds_xy, self.world_bounds_xy),
+                y.clamp(-self.world_bounds_xy, self.world_bounds_xy),
+                z.clamp(self.world_bounds_z_min + 0.1, self.world_bounds_z_max),
             ];
             drone.target_yaw = yaw;
             drone.mode = DroneMode::Goto;
@@ -392,7 +425,7 @@ impl RustSwarm {
     pub fn velocity(&mut self, id: usize, vx: f32, vy: f32, vz: f32, yaw_rate: f32) {
         if id < self.drones.len() {
             let drone = &mut self.drones[id];
-            let max_v = 2.0;
+            let max_v = self.max_velocity;
             drone.target_vel = [
                 vx.clamp(-max_v, max_v),
                 vy.clamp(-max_v, max_v),

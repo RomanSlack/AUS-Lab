@@ -212,6 +212,22 @@ class SwarmWorldRust:
             "timestamp": float(self.swarm.get_time())
         }
 
+    def set_world_bounds(self, xy_bounds: float, z_min: float, z_max: float):
+        """
+        Set world bounds for terrain scaling.
+
+        Args:
+            xy_bounds: ±this value for X and Y
+            z_min: minimum Z (ground level)
+            z_max: maximum Z (ceiling)
+        """
+        self.swarm.set_world_bounds(xy_bounds, z_min, z_max)
+        print(f"[SwarmWorldRust] World bounds set to ±{xy_bounds}m XY, {z_min}-{z_max}m Z")
+
+    def get_world_bounds(self):
+        """Get current world bounds."""
+        return self.swarm.get_world_bounds()
+
     def close(self):
         """Clean up (nothing to do for Rust physics)."""
         print("[SwarmWorldRust] Closed")

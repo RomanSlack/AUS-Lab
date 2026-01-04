@@ -41,8 +41,12 @@ except ImportError:
 from api_schemas import (
     SpawnRequest, TakeoffRequest, LandRequest, HoverRequest,
     GotoRequest, VelocityRequest, FormationRequest,
-    StateResponse, CommandResponse, ResetResponse, ClickCoordsResponse
+    StateResponse, CommandResponse, ResetResponse, ClickCoordsResponse,
+    TerrainLoadRequest, TerrainLoadResponse, TerrainStatusResponse
 )
+
+# Terrain service (lazy loaded)
+terrain_service = None
 
 
 # Global swarm instance
@@ -564,6 +568,145 @@ async def get_click_coords():
         coords=[x, y, z],
         message=f"Last click at ({x:.2f}, {y:.2f}, {z:.2f})"
     )
+
+
+# ============================================================================
+# Terrain Endpoints
+# ============================================================================
+
+def get_terrain_service():
+    """Get or create terrain service singleton."""
+    global terrain_service
+    if terrain_service is None:
+        try:
+            from terrain import TerrainService
+            terrain_service = TerrainService()
+        except ImportError as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Terrain service dependencies not installed: {e}. Run: pip install aiohttp Pillow scipy"
+            )
+    return terrain_service
+
+
+@app.get("/terrain/status", response_model=TerrainStatusResponse, tags=["Terrain"])
+async def terrain_status():
+    """
+    **Get Terrain Service Status**
+
+    Check if the terrain service is properly configured with Mapbox API keys.
+
+    **Setup:**
+    1. Get a Mapbox access token from https://mapbox.com
+    2. Set environment variable: `export MAPBOX_ACCESS_TOKEN=your_token`
+    3. Or create a `.env` file in the project root with: `MAPBOX_ACCESS_TOKEN=your_token`
+    """
+    try:
+        service = get_terrain_service()
+        return TerrainStatusResponse(
+            configured=service.is_configured,
+            cacheEnabled=service.config.cache_enabled,
+            cacheDir=service.config.cache_dir,
+            message="Ready to load terrain" if service.is_configured else "MAPBOX_ACCESS_TOKEN not set"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        return TerrainStatusResponse(
+            configured=False,
+            cacheEnabled=False,
+            cacheDir="",
+            message=f"Error initializing terrain service: {e}"
+        )
+
+
+@app.post("/terrain/load", response_model=TerrainLoadResponse, tags=["Terrain"])
+async def load_terrain(request: TerrainLoadRequest):
+    """
+    **Load Real-World Terrain**
+
+    Fetch terrain elevation and satellite imagery for a geographic location.
+    Returns mesh geometry (vertices, normals, UVs, indices) and satellite texture
+    ready for rendering in Three.js.
+
+    **Popular Locations:**
+    - Lake Tahoe: `lat=39.0968, lng=-120.0324`
+    - Grand Canyon: `lat=36.1069, lng=-112.1129`
+    - Mt Rainier: `lat=46.8523, lng=-121.7603`
+    - Swiss Alps (Matterhorn): `lat=45.9763, lng=7.6586`
+    - Yosemite Valley: `lat=37.7456, lng=-119.5936`
+
+    **Parameters:**
+    - **lat**: Center latitude
+    - **lng**: Center longitude
+    - **size_meters**: Area size in meters (100-10000, default 2000)
+    - **zoom**: Optional zoom level (1-15, auto-calculated if omitted)
+    - **realistic_scale**: Use 1:1 scale (drones at actual size relative to terrain)
+    - **resolution**: Satellite image quality (low/medium/high/ultra)
+
+    **Response:**
+    - **mesh**: Geometry data (base64 encoded arrays)
+    - **texture**: Satellite imagery (base64 JPEG)
+    - **location**: Geographic metadata
+    - **coordinateMapping**: For converting simulation coords to geo coords
+
+    **Note:** First request for an area may take a few seconds to fetch tiles.
+    Subsequent requests use cached tiles.
+    """
+    global swarm
+
+    service = get_terrain_service()
+
+    if not service.is_configured:
+        raise HTTPException(
+            status_code=503,
+            detail="Terrain service not configured. Set MAPBOX_ACCESS_TOKEN environment variable."
+        )
+
+    # Map resolution string to meters per pixel
+    resolution_map = {
+        "low": 4.0,
+        "medium": 2.0,
+        "high": 1.0,
+        "ultra": 0.5,
+    }
+    target_resolution = resolution_map.get(request.resolution, 2.0)
+
+    try:
+        result = await service.load_terrain(
+            lat=request.lat,
+            lng=request.lng,
+            size_meters=request.size_meters,
+            zoom=request.zoom,
+            realistic_scale=request.realistic_scale,
+            target_resolution=target_resolution
+        )
+
+        # Update physics bounds if using realistic scale
+        if request.realistic_scale and swarm is not None:
+            # Set world bounds to match terrain size
+            half_size = request.size_meters / 2
+            # Z bounds based on terrain elevation range + headroom
+            z_min = 0.0  # Ground level (terrain handles actual elevation)
+            z_max = 500.0  # 500m ceiling for large terrain
+            swarm.set_world_bounds(half_size, z_min, z_max)
+            print(f"[Terrain] Set physics bounds to ±{half_size}m XY, {z_min}-{z_max}m Z")
+
+        result_dict = result.to_dict()
+
+        return TerrainLoadResponse(
+            success=True,
+            mesh=result_dict['mesh'],
+            texture=result_dict['texture'],
+            location=result_dict['location'],
+            coordinateMapping=result_dict['coordinateMapping']
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to load terrain: {e}"
+        )
 
 
 # WebSocket endpoint for real-time communication

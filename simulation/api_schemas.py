@@ -192,3 +192,109 @@ class HivemindMoveRequest(BaseModel):
     position: List[float] = Field(default=[0.0, 0.0, 1.0], min_length=3, max_length=3, description="Target center of the swarm")
     yaw: float = Field(default=0.0, description="Target yaw of the swarm")
     scale: float = Field(default=1.0, ge=0.1, le=5.0, description="Target scale of the swarm")
+
+
+# ============================================================================
+# Terrain System Schemas
+# ============================================================================
+
+class TerrainLoadRequest(BaseModel):
+    """Request to load terrain for a geographic location."""
+    model_config = ConfigDict(json_schema_extra={
+        "examples": [
+            {"lat": 39.0968, "lng": -120.0324, "size_meters": 2000},  # Lake Tahoe
+            {"lat": 36.1069, "lng": -112.1129, "size_meters": 5000, "realistic_scale": True},  # Grand Canyon 1:1
+            {"lat": 46.8523, "lng": -121.7603, "size_meters": 3000, "resolution": "high"},  # Mt Rainier HD
+        ]
+    })
+
+    lat: float = Field(description="Center latitude (-90 to 90)")
+    lng: float = Field(description="Center longitude (-180 to 180)")
+    size_meters: float = Field(
+        default=2000.0,
+        ge=100.0,
+        le=10000.0,
+        description="Size of area to load in meters (100-10000)"
+    )
+    zoom: int = Field(
+        default=None,
+        ge=1,
+        le=15,
+        description="Optional zoom level (1-15). Auto-calculated if not provided."
+    )
+    realistic_scale: bool = Field(
+        default=False,
+        description="Use 1:1 scale (1m real = 1m simulation). Drones will appear at realistic size relative to terrain."
+    )
+    resolution: Literal["low", "medium", "high", "ultra"] = Field(
+        default="medium",
+        description="Satellite imagery resolution: low (~4m/px), medium (~2m/px), high (~1m/px), ultra (~0.5m/px)"
+    )
+
+    @field_validator('lat')
+    @classmethod
+    def validate_lat(cls, v):
+        if v < -90 or v > 90:
+            raise ValueError("Latitude must be between -90 and 90")
+        return v
+
+    @field_validator('lng')
+    @classmethod
+    def validate_lng(cls, v):
+        if v < -180 or v > 180:
+            raise ValueError("Longitude must be between -180 and 180")
+        return v
+
+
+class TerrainMeshResponse(BaseModel):
+    """Mesh geometry data for terrain."""
+    positions: str = Field(description="Base64-encoded Float32 array of vertex positions")
+    normals: str = Field(description="Base64-encoded Float32 array of vertex normals")
+    uvs: str = Field(description="Base64-encoded Float32 array of UV coordinates")
+    indices: str = Field(description="Base64-encoded Uint32 array of triangle indices")
+    width: int = Field(description="Number of vertices in X direction")
+    height: int = Field(description="Number of vertices in Y direction")
+    minElevation: float = Field(description="Minimum elevation in source data (meters)")
+    maxElevation: float = Field(description="Maximum elevation in source data (meters)")
+    boundsMin: List[float] = Field(description="Mesh bounds minimum [x, y, z]")
+    boundsMax: List[float] = Field(description="Mesh bounds maximum [x, y, z]")
+    vertexCount: int = Field(description="Total number of vertices")
+    indexCount: int = Field(description="Total number of indices")
+
+
+class TerrainTextureResponse(BaseModel):
+    """Satellite texture data."""
+    data: str = Field(description="Base64-encoded JPEG image data")
+    width: int = Field(description="Texture width in pixels")
+    height: int = Field(description="Texture height in pixels")
+
+
+class TerrainLocationResponse(BaseModel):
+    """Geographic location info."""
+    centerLat: float = Field(description="Center latitude")
+    centerLng: float = Field(description="Center longitude")
+    areaSizeMeters: float = Field(description="Area size in meters")
+
+
+class TerrainCoordinateMappingResponse(BaseModel):
+    """Coordinate mapping between simulation and geographic coordinates."""
+    geoOriginLat: float = Field(description="Geographic latitude at simulation origin")
+    geoOriginLng: float = Field(description="Geographic longitude at simulation origin")
+    metersPerUnit: float = Field(description="Real-world meters per simulation unit")
+
+
+class TerrainLoadResponse(BaseModel):
+    """Complete response for terrain load request."""
+    success: bool = Field(description="Whether terrain was loaded successfully")
+    mesh: TerrainMeshResponse = Field(description="Mesh geometry data")
+    texture: TerrainTextureResponse = Field(description="Satellite texture data")
+    location: TerrainLocationResponse = Field(description="Geographic location info")
+    coordinateMapping: TerrainCoordinateMappingResponse = Field(description="Coordinate mapping info")
+
+
+class TerrainStatusResponse(BaseModel):
+    """Status of terrain service."""
+    configured: bool = Field(description="Whether terrain service is configured with API keys")
+    cacheEnabled: bool = Field(description="Whether tile caching is enabled")
+    cacheDir: str = Field(description="Cache directory path")
+    message: str = Field(description="Status message")

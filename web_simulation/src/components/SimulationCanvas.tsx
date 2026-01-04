@@ -4,6 +4,7 @@ import { OrbitControls, Grid, Environment, Stats } from '@react-three/drei';
 import * as THREE from 'three';
 import { DroneSwarm } from './DroneSwarm';
 import { DroneFPVCamera } from './DroneFPVCamera';
+import { TerrainMesh } from './TerrainMesh';
 import { useSimulationStore } from '../store/simulationStore';
 import { useCommands } from '../hooks/useCommands';
 
@@ -50,6 +51,7 @@ function WaypointMarker({ position, isMonitor }: { position: [number, number, nu
 
 function ClickableGround({ onGroundClick }: { onGroundClick: (point: THREE.Vector3) => void }) {
   const meshRef = useRef<THREE.Mesh>(null);
+  const terrain = useSimulationStore((state) => state.terrain);
 
   const handleClick = (event: ThreeEvent<MouseEvent>) => {
     event.stopPropagation();
@@ -57,6 +59,22 @@ function ClickableGround({ onGroundClick }: { onGroundClick: (point: THREE.Vecto
       onGroundClick(event.point);
     }
   };
+
+  // If terrain is loaded, we only need an invisible click plane
+  // The terrain mesh provides the visual, this provides click detection
+  if (terrain) {
+    return (
+      <mesh
+        ref={meshRef}
+        rotation={[-Math.PI / 2, 0, 0]}
+        position={[0, 0.01, 0]}
+        onClick={handleClick}
+      >
+        <planeGeometry args={[50, 50]} />
+        <meshBasicMaterial transparent opacity={0} />
+      </mesh>
+    );
+  }
 
   return (
     <mesh
@@ -73,7 +91,7 @@ function ClickableGround({ onGroundClick }: { onGroundClick: (point: THREE.Vecto
 }
 
 function Scene() {
-  const { drones, waypoint, setWaypoint, monitorMode } = useSimulationStore();
+  const { drones, waypoint, setWaypoint, monitorMode, terrain } = useSimulationStore();
   const { waypoint: sendWaypoint, monitor: sendMonitor } = useCommands();
 
   const handleGroundClick = (point: THREE.Vector3) => {
@@ -110,7 +128,10 @@ function Scene() {
         shadow-camera-bottom={-20}
       />
 
-      {/* Clickable Ground */}
+      {/* Terrain (if loaded) */}
+      <TerrainMesh />
+
+      {/* Clickable Ground (invisible when terrain loaded) */}
       <ClickableGround onGroundClick={handleGroundClick} />
 
       {/* Waypoint marker */}
@@ -136,14 +157,14 @@ function Scene() {
       {/* FPV Camera for selected drone */}
       <DroneFPVCamera />
 
-      {/* Camera controls */}
+      {/* Camera controls - adjust distance limits based on terrain scale */}
       <OrbitControls
         enableDamping
         dampingFactor={0.05}
-        minDistance={2}
-        maxDistance={50}
+        minDistance={terrain?.coordinateMapping?.metersPerUnit === 1 ? 5 : 2}
+        maxDistance={terrain?.coordinateMapping?.metersPerUnit === 1 ? 5000 : 50}
         maxPolarAngle={Math.PI / 2.1}
-        target={[0, 1, 0]}
+        target={[0, terrain?.coordinateMapping?.metersPerUnit === 1 ? 50 : 1, 0]}
       />
 
       {/* HDRI Environment for lighting and skybox */}
@@ -153,9 +174,22 @@ function Scene() {
 }
 
 export function SimulationCanvas() {
+  const terrain = useSimulationStore((state) => state.terrain);
+
+  // Adjust camera for large-scale terrain
+  const isRealisticScale = terrain?.coordinateMapping?.metersPerUnit === 1;
+  const cameraPosition: [number, number, number] = isRealisticScale
+    ? [200, 200, 200]  // Much further back for 1:1 scale
+    : [8, 8, 8];       // Default for scaled terrain
+
   return (
     <Canvas
-      camera={{ position: [8, 8, 8], fov: 60 }}
+      camera={{
+        position: cameraPosition,
+        fov: 60,
+        near: isRealisticScale ? 1 : 0.1,
+        far: isRealisticScale ? 20000 : 1000,
+      }}
       gl={{ antialias: true, alpha: false }}
       dpr={[1, 2]}
       shadows

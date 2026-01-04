@@ -8,3 +8,8 @@ stable-baselines3
 opencv-python
 pytest>=8.0.0
 pytest-mock>=3.12.0
+
+# Terrain system dependencies
+aiohttp>=3.9.0
+Pillow>=10.0.0
+scipy>=1.11.0

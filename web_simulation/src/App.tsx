@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { SimulationCanvas } from './components/SimulationCanvas';
 import { ControlPanel } from './components/ControlPanel';
 import { ModelTest } from './components/ModelTest';
@@ -5,6 +6,8 @@ import { ChatPill } from './components/ChatPill';
 import { DroneHUD } from './components/DroneHUD';
 import { DroneCameraView } from './components/DroneCameraView';
 import { ControlsOverlay } from './components/ControlsOverlay';
+import { LocationPicker, TerrainToggleButton } from './components/LocationPicker';
+import { TerrainInfo } from './components/TerrainMesh';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useKeyboardControls } from './hooks/useKeyboardControls';
 import './App.css';
@@ -25,6 +28,9 @@ function App() {
   // Initialize keyboard controls
   useKeyboardControls();
 
+  // Location picker modal state
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
+
   return (
     <div className="app">
       <div className="canvas-container">
@@ -33,6 +39,17 @@ function App() {
         <DroneCameraView />
         <ControlsOverlay />
         <ChatPill />
+        <TerrainInfo />
+
+        {/* Terrain button in top-left corner */}
+        <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 100 }}>
+          <TerrainToggleButton onClick={() => setShowLocationPicker(true)} />
+        </div>
+
+        {/* Location picker modal */}
+        {showLocationPicker && (
+          <LocationPicker onClose={() => setShowLocationPicker(false)} />
+        )}
       </div>
 
       <aside className="sidebar">
